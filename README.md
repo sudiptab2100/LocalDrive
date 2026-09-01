@@ -11,8 +11,12 @@ can be added at any time.
 - **Native macOS app** (Electron) — a menu‑bar/tray control center. No Xcode required.
 - **Two ways for clients to connect**
   - **Web UI** — an installable, mobile‑first PWA with dark mode (open `http://<your-mac>.local:<port>`).
-  - **WebDAV** — mount as a normal drive in Finder / Windows Explorer / Android.
+  - **WebDAV** — mount as a normal drive in Finder / Windows Explorer / Android; each
+    account is rooted at its own private home folder (admins get the whole drive).
 - **Accounts + per‑folder permissions (RBAC)** — read / read‑write / admin per user, per folder.
+- **Private per‑user home folders** — every account automatically gets its own
+  `LocalDrive/<username>/` folder and is confined to it over both the web UI **and** WebDAV;
+  admins can browse the whole drive and reset any user's password.
 - **Resumable, large uploads** (tus protocol via Uppy) — pause/resume, drag‑and‑drop, progress.
 - **Bulk actions + streaming ZIP** download of selected files/folders.
 - **Thumbnails & inline preview** for images, PDFs, text, audio, and video (HTTP range requests).
@@ -53,14 +57,19 @@ npm run dist         # DMG + zip       -> release/
    one‑time password — save it.
 2. Go to the **Drives** tab and **Share** the external drive you want to serve.
 3. Press **Start server** (top‑right). The status bar shows your address, e.g.
-   `http://MyMac.local:8088`.
+   `http://MyMac.local:4820`.
 4. On another device on the same WiFi:
    - Open the **Connect** tab and scan the **QR code**, or type the URL into a browser.
-   - Or mount the WebDAV URL (`http://MyMac.local:8088/dav`) in your file manager.
+   - Or mount the WebDAV URL (`http://MyMac.local:4820/dav`) in a WebDAV‑capable file
+     manager, signing in with your LocalDrive username and password. If `.local` doesn't
+     resolve on your device (e.g. some Android/Windows clients), use the Mac's LAN IP
+     instead, e.g. `http://192.168.1.62:4820/dav`.
 5. Create users and grant per‑folder access in the **Users** tab.
 
-Files are stored on the drive under a `LocalDrive/` folder; per‑drive metadata (index,
-thumbnails, in‑progress uploads) lives in a hidden `.localdrive/` folder on the same drive.
+Files are stored on the drive under a `LocalDrive/` folder, with each user's private files
+under `LocalDrive/<username>/` (admins see the whole `LocalDrive/`); per‑drive metadata
+(index, thumbnails, in‑progress uploads) lives in a hidden `.localdrive/` folder on the same
+drive.
 Central settings, accounts, and the drive registry live in
 `~/Library/Application Support/LocalDrive/`.
 
