@@ -28,7 +28,8 @@ export function App() {
   const [loading, setLoading] = useState(false)
   const [appError, setAppError] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('localdrive-view') as ViewMode) || 'grid')
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('localdrive-view') as ViewMode) || 'list')
+  const [showHidden, setShowHidden] = useState<boolean>(() => localStorage.getItem('localdrive-hidden') === '1')
   const [preview, setPreview] = useState<FileEntry | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -64,7 +65,7 @@ export function App() {
     setLoading(true)
     setAppError('')
     try {
-      const response = await api.list(currentDriveId, currentPath)
+      const response = await api.list(currentDriveId, currentPath, showHidden)
       setEntries(response.entries)
       setSelected(new Set())
     } catch (error) {
@@ -74,7 +75,7 @@ export function App() {
     } finally {
       setLoading(false)
     }
-  }, [currentDriveId, currentPath, toast])
+  }, [currentDriveId, currentPath, showHidden, toast])
 
   const uppy = useMemo(() => {
     const instance = new Uppy({ autoProceed: false })
@@ -95,6 +96,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('localdrive-view', viewMode)
   }, [viewMode])
+
+  useEffect(() => {
+    localStorage.setItem('localdrive-hidden', showHidden ? '1' : '0')
+  }, [showHidden])
 
   useEffect(() => {
     api.me()
@@ -148,7 +153,7 @@ export function App() {
     const controller = new AbortController()
     const handle = window.setTimeout(() => {
       setSearching(true)
-      api.search(query, currentDriveId || undefined)
+      api.search(query, currentDriveId || undefined, showHidden)
         .then((response) => setSearchHits(response.hits))
         .catch((error) => {
           if (!controller.signal.aborted) toast('error', error instanceof Error ? error.message : 'Search failed')
@@ -159,7 +164,7 @@ export function App() {
       controller.abort()
       window.clearTimeout(handle)
     }
-  }, [searchQuery, currentDriveId, toast])
+  }, [searchQuery, currentDriveId, showHidden, toast])
 
   const onLogin = async (username: string, password: string) => {
     const result = await api.login(username, password)
@@ -313,6 +318,7 @@ export function App() {
           <Breadcrumb rootLabel={confined ? 'Home' : currentDrive?.label || 'Drive'} path={currentPath} onNavigate={setCurrentPath} />
           <div className="toolbar-actions">
             <button onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}>{viewMode === 'grid' ? 'List' : 'Grid'}</button>
+            <button onClick={() => setShowHidden((value) => !value)} title="Show or hide dotfiles and macOS ._ files">{showHidden ? 'Hide hidden' : 'Show hidden'}</button>
             <button onClick={makeFolder} disabled={!currentDriveId || currentDrive?.online === false}>New Folder</button>
             <button className="primary" onClick={() => setShowUploader(true)} disabled={!currentDriveId || currentDrive?.online === false}>Upload</button>
           </div>

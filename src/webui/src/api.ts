@@ -86,8 +86,8 @@ export const api = {
   drives() {
     return request<{ drives: DriveInfo[] }>('/api/drives')
   },
-  list(drive: string, path: string) {
-    return request<ListResponse>(`/api/files/list?${params({ drive, path })}`)
+  list(drive: string, path: string, hidden?: boolean) {
+    return request<ListResponse>(`/api/files/list?${params({ drive, path, hidden: hidden ? '1' : undefined })}`)
   },
   mkdir(drive: string, path: string, name: string) {
     return request<{ ok: true }>('/api/files/mkdir', { method: 'POST', body: JSON.stringify({ drive, path, name }) })
@@ -104,8 +104,8 @@ export const api = {
   delete(drive: string, paths: string[]) {
     return request<{ ok: true }>('/api/files/delete', { method: 'POST', body: JSON.stringify({ drive, paths }) })
   },
-  search(query: string, drive?: string) {
-    return request<SearchResponse>(`/api/search?${params({ q: query, drive })}`)
+  search(query: string, drive?: string, hidden?: boolean) {
+    return request<SearchResponse>(`/api/search?${params({ q: query, drive, hidden: hidden ? '1' : undefined })}`)
   },
   connect() {
     return request<ConnectInfo>('/api/connect')

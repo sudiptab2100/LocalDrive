@@ -15,7 +15,11 @@ function mimeOf(name: string): string | null {
 }
 
 /** List a directory and refresh the search index for its entries. */
-export async function listDirectory(uuid: string, relPath: string): Promise<FileEntry[]> {
+export async function listDirectory(
+  uuid: string,
+  relPath: string,
+  includeHidden = false
+): Promise<FileEntry[]> {
   const abs = await resolveInDrive(uuid, relPath)
   if (!abs) throw new Error('Invalid path')
   const dirents = await fs.readdir(abs, { withFileTypes: true })
@@ -39,9 +43,16 @@ export async function listDirectory(uuid: string, relPath: string): Promise<File
       /* skip unreadable entries */
     }
   }
+  // Hidden entries are dotfiles, including macOS AppleDouble "._" sidecars that
+  // appear next to every file on exFAT/FAT drives. We index ALL entries so the
+  // "show hidden" toggle can reveal them in search too; hidden results are
+  // filtered out at query time unless that toggle is on. (.localdrive is
+  // excluded above, so it is never indexed or listed.)
+  const visible = entries.filter((e) => !e.name.startsWith('.'))
   indexEntries(uuid, entries)
-  entries.sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
-  return entries
+  const result = includeHidden ? entries : visible
+  result.sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
+  return result
 }
 
 export async function statEntry(uuid: string, relPath: string): Promise<FileEntry | null> {

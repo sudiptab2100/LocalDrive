@@ -31,6 +31,7 @@ function can(req: Request, drive: string, path: string, need: 'read' | 'write' |
 filesRouter.get('/list', requireAuth, async (req, res) => {
   const drive = String(req.query.drive || '')
   const path = String(req.query.path || '')
+  const includeHidden = req.query.hidden === '1' || req.query.hidden === 'true'
   if (!drive) return res.status(400).json({ error: 'Missing drive' })
   const scope = await driveScope(req, drive)
   if (!scope) return res.status(403).json({ error: 'Permission denied' })
@@ -38,7 +39,7 @@ filesRouter.get('/list', requireAuth, async (req, res) => {
   if (full == null || !can(req, drive, full, 'read'))
     return res.status(403).json({ error: 'Permission denied' })
   try {
-    const entries = await listDirectory(drive, full)
+    const entries = await listDirectory(drive, full, includeHidden)
     res.json({ path, entries: entries.map((e) => ({ ...e, path: scope.out(e.path) })) })
   } catch (e) {
     res.status(400).json({ error: (e as Error).message })

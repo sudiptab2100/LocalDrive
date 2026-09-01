@@ -221,7 +221,7 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
   .topbar-tools { margin-left: auto; }
   .hide-mobile { display: none; }
   .toolbar, .drive-card, .preview-modal header { display: grid; grid-template-columns: 1fr; }
-  .toolbar-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .toolbar-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .drive-card { gap: var(--s3); }
   .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
   .bulkbar { top: 8.5rem; }
