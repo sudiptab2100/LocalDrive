@@ -65,7 +65,7 @@ export function DrivesPanel({
           Mac. Registered drives are reattached automatically by their unique ID after unplug/replug
           or restart.
         </p>
-        <div className="drive-actions">
+        <div className="head-actions">
           <button
             className="btn primary"
             disabled={busy === '__add__'}
@@ -73,10 +73,7 @@ export function DrivesPanel({
           >
             + Share a folder…
           </button>
-          <label
-            className="small muted"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
-          >
+          <label className="check-label small muted">
             <input
               type="checkbox"
               checked={showUnshareable}
@@ -310,7 +307,7 @@ function UserRow({
   return (
     <div className="card">
       <div className="row-between">
-        <div>
+        <div className="row-main">
           <strong>{user.username}</strong> <span className="tag">{user.role}</span>
           {user.role !== 'admin' && user.home && (
             <div className="small muted">Private home: LocalDrive/{user.home}/ on every shared drive</div>

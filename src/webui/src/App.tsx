@@ -253,45 +253,49 @@ export function App() {
           <img src="/icons/icon-192.png" alt="" />
           <span>LocalDrive</span>
         </button>
-        {(!confined || drives.length > 1) && (
-          <select
-            className="drive-select"
-            value={currentDriveId}
-            onChange={(event) => {
-              setCurrentDriveId(event.target.value)
-              setCurrentPath('')
-            }}
-            aria-label={confined ? 'Current location' : 'Current drive'}
-          >
-            {drives.length === 0 && <option value="">No drives shared</option>}
-            {drives.map((drive, index) => (
-              <option key={drive.uuid} value={drive.uuid}>
-                {confined ? `My Files${drives.length > 1 ? ` ${index + 1}` : ''}` : drive.label}{drive.online ? '' : ' (offline)'}
-              </option>
-            ))}
-          </select>
-        )}
-        <div className="search-wrap">
-          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search files…" aria-label="Search files" />
-          {(searchHits.length > 0 || searching) && (
-            <div className="search-panel">
-              {searching && <div className="muted pad">Searching…</div>}
-              {!searching && searchHits.map((hit) => (
-                <button key={`${hit.drive}:${hit.path}`} onClick={() => openSearchHit(hit)}>
-                  <span>{hit.isDir ? '📁' : '📄'}</span>
-                  <span><strong>{hit.name}</strong><small>{hit.path || 'Root'}</small></span>
-                </button>
+        <div className="topbar-center">
+          {(!confined || drives.length > 1) && (
+            <select
+              className="drive-select"
+              value={currentDriveId}
+              onChange={(event) => {
+                setCurrentDriveId(event.target.value)
+                setCurrentPath('')
+              }}
+              aria-label={confined ? 'Current location' : 'Current drive'}
+            >
+              {drives.length === 0 && <option value="">No drives shared</option>}
+              {drives.map((drive, index) => (
+                <option key={drive.uuid} value={drive.uuid}>
+                  {confined ? `My Files${drives.length > 1 ? ` ${index + 1}` : ''}` : drive.label}{drive.online ? '' : ' (offline)'}
+                </option>
               ))}
-            </div>
+            </select>
           )}
+          <div className="search-wrap">
+            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search files…" aria-label="Search files" />
+            {(searchHits.length > 0 || searching) && (
+              <div className="search-panel">
+                {searching && <div className="muted pad">Searching…</div>}
+                {!searching && searchHits.map((hit) => (
+                  <button key={`${hit.drive}:${hit.path}`} onClick={() => openSearchHit(hit)}>
+                    <span>{hit.isDir ? '📁' : '📄'}</span>
+                    <span><strong>{hit.name}</strong><small>{hit.path || 'Root'}</small></span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle color theme">
-          {theme === 'dark' ? '☀️' : '🌙'}
-        </button>
-        <button className="icon-button hide-mobile" onClick={loadConnect} aria-label="Connect another device">▦</button>
-        <div className="user-menu">
-          <span>{user.username}</span>
-          <button onClick={logout}>Logout</button>
+        <div className="topbar-tools">
+          <button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle color theme">
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+          <button className="icon-button hide-mobile" onClick={loadConnect} aria-label="Connect another device">▦</button>
+          <div className="user-menu">
+            <span>{user.username}</span>
+            <button onClick={logout}>Logout</button>
+          </div>
         </div>
       </header>
 
@@ -586,11 +590,62 @@ function Thumb({ entry, drive }: { entry: FileEntry; drive: string }) {
 function ItemActions(props: { entry: FileEntry; onDownload: () => void; onRename: () => void; onDelete: () => void; onMove: () => void; onCopy: () => void }) {
   return (
     <div className="actions">
-      <button title="Download" onClick={props.onDownload}>⬇</button>
-      <button title="Rename" onClick={props.onRename}>✎</button>
-      <button title="Move" onClick={props.onMove}>↪</button>
-      <button title="Copy" onClick={props.onCopy}>⧉</button>
-      <button className="danger" title="Delete" onClick={props.onDelete}>⌫</button>
+      <button title="Download" aria-label={`Download ${props.entry.name}`} onClick={props.onDownload}>⬇</button>
+      <OverflowMenu
+        label={`More actions for ${props.entry.name}`}
+        items={[
+          { label: 'Rename', icon: '✎', onSelect: props.onRename },
+          { label: 'Move', icon: '↪', onSelect: props.onMove },
+          { label: 'Copy', icon: '⧉', onSelect: props.onCopy },
+          { label: 'Delete', icon: '⌫', onSelect: props.onDelete, danger: true }
+        ]}
+      />
+    </div>
+  )
+}
+
+function OverflowMenu({ label, items }: { label: string; items: Array<{ label: string; icon: string; onSelect: () => void; danger?: boolean }> }) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onMouseDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  return (
+    <div className="overflow-menu" ref={menuRef}>
+      <button type="button" className="menu-trigger" aria-haspopup="menu" aria-expanded={open} aria-label={label} onClick={() => setOpen((value) => !value)}>⋯</button>
+      {open && (
+        <div className="menu-popover" role="menu">
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              className={item.danger ? 'danger' : undefined}
+              onClick={() => {
+                setOpen(false)
+                item.onSelect()
+              }}
+            >
+              <span aria-hidden="true">{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
