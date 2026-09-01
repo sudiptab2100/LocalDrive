@@ -11,6 +11,7 @@ import { statsRouter } from './routes/stats.js'
 import { usersRouter } from './routes/users.js'
 import { getStatus } from '../status.js'
 import { qrDataUrl } from '../discovery.js'
+import { pickQrUrl } from '../util/net.js'
 
 /** Holder allowing the WebDAV handler to be swapped when drives change. */
 let webdavHandler: RequestHandler | null = null
@@ -56,7 +57,7 @@ export function createApp(opts: AppOptions = {}): Express {
   // Connection info + QR code for easy device onboarding.
   app.get('/api/connect', requireAuth, async (_req, res) => {
     const status = getStatus()
-    const primary = status.urls[0] || `http://localhost:${status.port}`
+    const primary = pickQrUrl(status.urls, status.port)
     res.json({ urls: status.urls, hostname: status.hostname, qr: await qrDataUrl(primary) })
   })
 

@@ -20,6 +20,7 @@ import {
 import { provisionUserHome, provisionDriveForAllUsers } from '../server/provisioning.js'
 import { getDashboard } from '../server/dashboard.js'
 import { qrDataUrl } from '../server/discovery.js'
+import { pickQrUrl } from '../server/util/net.js'
 import { getStatus } from '../server/status.js'
 import { bus, EVENTS } from '../server/events.js'
 import { IPC, type UserWithAcls } from '../shared/ipc.js'
@@ -269,7 +270,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.dashboard, () => getDashboard(true))
   ipcMain.handle(IPC.connectInfo, async () => {
     const status = getStatus()
-    const primary = status.urls[0] || `http://localhost:${status.port}`
+    const primary = pickQrUrl(status.urls, status.port)
     return { urls: status.urls, hostname: status.hostname, qr: await qrDataUrl(primary) }
   })
 

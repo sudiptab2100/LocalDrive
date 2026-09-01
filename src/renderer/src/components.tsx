@@ -388,6 +388,11 @@ export function ConnectPanel(): JSX.Element {
             </div>
           ))}
           <div className="small muted">
+            The IP link works on any device on this WiFi. The <code>.local</code> name needs
+            Bonjour/mDNS — fine on Apple devices and most modern OSes, but on Android or older
+            Windows use the IP link.
+          </div>
+          <div className="small muted">
             To mount as a drive, use WebDAV at <code>{(info.urls[0] || '') + '/dav'}</code>
           </div>
         </div>

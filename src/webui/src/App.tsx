@@ -310,6 +310,7 @@ export function App() {
           <h3>Connect another device</h3>
           {connectQr ? <img src={connectQr} alt="Connection QR code" /> : <p>Loading QR…</p>}
           <p className="muted">Scan on a phone or tablet connected to this WiFi network.</p>
+          <p className="muted small">The QR points to this Mac's IP, so it opens on any device — including Android, where <code>.local</code> names often don't resolve.</p>
         </aside>
       )}
 
