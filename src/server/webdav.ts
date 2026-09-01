@@ -74,7 +74,10 @@ export function buildWebdav(
   // physically rooted at their home folder so they can never see outside it.
   const cache = new Map<string, RequestHandler>()
 
-  function buildForUser(owner: User): RequestHandler {
+  // Build a WebDAV handler for one user (mounts rooted at their home), or a
+  // mount-less "anonymous" handler (owner === null) used for unauthenticated
+  // protocol handshakes like OPTIONS capability discovery.
+  function buildServer(owner: User | null): RequestHandler {
     const mountToDrive = new Map<string, { uuid: string; home: string }>()
 
     // Map WebDAV privilege checks onto our per-folder RBAC. `fullPath` is
@@ -110,38 +113,41 @@ export function buildWebdav(
       privilegeManager: new LocalDrivePrivilege() as any
     })
 
-    for (const d of usable) {
-      let home = ''
-      if (owner.role !== 'admin') {
-        const h = getUserHome(owner, d.uuid)
-        if (h == null) continue // no access to this drive -> don't mount it
-        home = h
-      }
-      const rootPath = home ? join(d.shareRoot, home) : d.shareRoot
-      try {
-        // Ensure the home dir exists (it may have been provisioned while the
-        // drive was offline). Best-effort — mirrors ensureUserHomeDir.
-        mkdirSync(rootPath, { recursive: true })
-      } catch {
-        /* ignore — read-only/offline media */
-      }
-      const name = nameByUuid.get(d.uuid)!
-      mountToDrive.set(name, { uuid: d.uuid, home })
-      try {
-        server.setFileSystemSync('/' + name, new webdav.PhysicalFileSystem(rootPath))
-      } catch {
-        /* skip drives that fail to mount */
+    if (owner) {
+      for (const d of usable) {
+        let home = ''
+        if (owner.role !== 'admin') {
+          const h = getUserHome(owner, d.uuid)
+          if (h == null) continue // no access to this drive -> don't mount it
+          home = h
+        }
+        const rootPath = home ? join(d.shareRoot, home) : d.shareRoot
+        try {
+          // Ensure the home dir exists (it may have been provisioned while the
+          // drive was offline). Best-effort — mirrors ensureUserHomeDir.
+          mkdirSync(rootPath, { recursive: true })
+        } catch {
+          /* ignore — read-only/offline media */
+        }
+        const name = nameByUuid.get(d.uuid)!
+        mountToDrive.set(name, { uuid: d.uuid, home })
+        try {
+          server.setFileSystemSync('/' + name, new webdav.PhysicalFileSystem(rootPath))
+        } catch {
+          /* skip drives that fail to mount */
+        }
       }
     }
 
     return webdav.extensions.express('/dav', server) as unknown as RequestHandler
   }
 
-  function challenge(res: any): void {
-    res.statusCode = 401
-    res.setHeader('WWW-Authenticate', 'Basic realm="LocalDrive"')
-    res.end('Authentication required')
-  }
+  // Shared mount-less handler for requests without valid credentials. Lets
+  // webdav-server answer protocol handshakes (OPTIONS -> 200 + DAV headers) and
+  // issue the Basic auth challenge (401) for resource methods, instead of us
+  // hand-rolling a 401 that would break clients' capability discovery.
+  let anonHandler: RequestHandler | null = null
+  const anon = (): RequestHandler => (anonHandler ??= buildServer(null))
 
   // Per-request wrapper: pick (or build) the caller's home-scoped server. We
   // decode only the username here (no bcrypt) to choose the server; the server's
@@ -150,18 +156,18 @@ export function buildWebdav(
   return (req, res, next) => {
     const header = String(req.headers['authorization'] || '')
     const m = /^Basic\s+(.+)$/i.exec(header)
-    if (!m) return challenge(res)
+    if (!m) return anon()(req, res, next)
     let username = ''
     try {
       username = Buffer.from(m[1], 'base64').toString('utf8').split(':')[0]
     } catch {
-      return challenge(res)
+      return anon()(req, res, next)
     }
     const owner = getUserByName(username)
-    if (!owner) return challenge(res) // unknown user: don't cache attacker-supplied names
+    if (!owner) return anon()(req, res, next) // unknown user: don't cache attacker-supplied names
     let handler = cache.get(owner.username)
     if (!handler) {
-      handler = buildForUser(owner)
+      handler = buildServer(owner)
       cache.set(owner.username, handler)
     }
     return handler(req, res, next)
