@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+release/
+
+# Stray root bundle artifact (real entry is out/main/index.cjs)
+/index.cjs
+
+# TypeScript / bundler caches
+*.tsbuildinfo
+.vite/
+.electron-vite/
+
+# Logs
+*.log
+logs/
+
+# Local app data / dev state
+.localdrive-dev/
+.localdrive/
+
+# Environment & secrets
+.env
+.env.*
+*.pem
+*.key
+
+# macOS
+.DS_Store
+**/.DS_Store
