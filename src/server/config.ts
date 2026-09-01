@@ -21,6 +21,10 @@ export interface AppConfig {
   shareRootName: string
   /** Whether to auto-start the server when the app launches. */
   autoStart: boolean
+  /** Serve an encrypted HTTPS listener (self-signed local CA) alongside HTTP. */
+  httpsEnabled: boolean
+  /** Port for the HTTPS listener when enabled. */
+  httpsPort: number
 }
 
 const DEFAULTS: Omit<AppConfig, 'jwtSecret'> = {
@@ -28,7 +32,9 @@ const DEFAULTS: Omit<AppConfig, 'jwtSecret'> = {
   host: '0.0.0.0',
   registeredDriveUuids: [],
   shareRootName: 'LocalDrive',
-  autoStart: true
+  autoStart: true,
+  httpsEnabled: false,
+  httpsPort: 4843
 }
 
 export interface Paths {

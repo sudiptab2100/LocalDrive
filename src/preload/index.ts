@@ -46,6 +46,7 @@ const api: LocalDriveApi = {
     get: () => ipcRenderer.invoke(IPC.configGet),
     set: (patch) => ipcRenderer.invoke(IPC.configSet, patch)
   },
+  revealCert: () => ipcRenderer.invoke(IPC.certReveal),
   openExternal: (url: string) => ipcRenderer.invoke(IPC.openExternal, url),
   platform: process.platform
 }

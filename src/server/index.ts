@@ -1,6 +1,7 @@
 import http from 'http'
+import https from 'https'
 import { join } from 'path'
-import type { Socket } from 'net'
+import type { Duplex } from 'stream'
 import { createApp, setWebdavHandler } from './http/app.js'
 import { loadConfig, localHostname, type AppConfig } from './config.js'
 import { getDb, checkpoint, closeDb, logActivity } from './db/index.js'
@@ -8,6 +9,7 @@ import { bootstrapAdmin } from './auth.js'
 import { backfillHomesAndProvision } from './provisioning.js'
 import { syncDrives, listRegisteredDrives, getShareRoot } from './drives/registry.js'
 import { buildWebdav } from './webdav.js'
+import { loadTlsMaterial } from './tls.js'
 import { startDiscovery, stopDiscovery } from './discovery.js'
 import { setStatus, getStatus } from './status.js'
 import { buildUrls } from './util/net.js'
@@ -25,7 +27,8 @@ export interface ServerManagerOptions {
  */
 export class ServerManager {
   private server: http.Server | null = null
-  private sockets = new Set<Socket>()
+  private httpsServer: https.Server | null = null
+  private sockets = new Set<Duplex>()
   private webuiDir: string
   private starting = false
   private pendingBootstrap: { username: string; password: string } | null | undefined
@@ -98,18 +101,57 @@ export class ServerManager {
       })
 
       this.server = server
+
+      // Optional encrypted listener alongside HTTP (dual mode). Cert generation
+      // failures degrade gracefully to HTTP-only rather than crashing the server.
+      let httpsActive = false
+      let httpsPort = 0
+      if (config.httpsEnabled) {
+        try {
+          const mat = loadTlsMaterial()
+          const httpsServer = https.createServer({ key: mat.key, cert: mat.cert, ca: mat.ca }, app)
+          httpsServer.on('connection', (socket) => {
+            this.sockets.add(socket)
+            socket.on('close', () => this.sockets.delete(socket))
+          })
+          await new Promise<void>((resolve, reject) => {
+            httpsServer.once('error', reject)
+            httpsServer.listen(config.httpsPort, config.host, () => {
+              httpsServer.removeListener('error', reject)
+              resolve()
+            })
+          })
+          this.httpsServer = httpsServer
+          httpsActive = true
+          httpsPort = config.httpsPort
+        } catch (err) {
+          logActivity('https_error', {
+            detail: (err as Error)?.message || String(err)
+          })
+        }
+      }
+
       const hostname = localHostname()
-      startDiscovery(config.port)
+      startDiscovery(config.port, httpsActive ? { httpsPort } : {})
+      // HTTPS URLs first so the QR/primary link prefers the secure endpoint.
+      const urls = [
+        ...(httpsActive ? buildUrls(httpsPort, hostname, 'https') : []),
+        ...buildUrls(config.port, hostname, 'http')
+      ]
       setStatus({
         running: true,
         port: config.port,
         host: config.host,
         hostname,
-        urls: buildUrls(config.port, hostname),
+        urls,
         startedAt: new Date().toISOString(),
-        activeConnections: 0
+        activeConnections: 0,
+        https: httpsActive,
+        httpsPort
       })
-      logActivity('server_start', { detail: `port ${config.port}` })
+      logActivity('server_start', {
+        detail: `port ${config.port}${httpsActive ? ` +https ${httpsPort}` : ''}`
+      })
       return getStatus()
     } finally {
       this.starting = false
@@ -118,9 +160,10 @@ export class ServerManager {
 
   /** Graceful shutdown. Waits up to `drainMs` for in-flight requests. */
   async stop(drainMs = 8000): Promise<void> {
-    const server = this.server
-    if (!server) return
+    const servers = [this.server, this.httpsServer].filter(Boolean) as http.Server[]
+    if (servers.length === 0) return
     this.server = null
+    this.httpsServer = null
     stopDiscovery()
 
     await new Promise<void>((resolve) => {
@@ -130,7 +173,10 @@ export class ServerManager {
         settled = true
         resolve()
       }
-      server.close(() => done())
+      let remaining = servers.length
+      for (const s of servers) s.close(() => {
+        if (--remaining === 0) done()
+      })
       // Give active requests time to finish, then force-close lingering sockets.
       const timer = setTimeout(() => {
         for (const s of this.sockets) s.destroy()
@@ -142,7 +188,7 @@ export class ServerManager {
 
     // Persist everything so a restart loses nothing.
     checkpoint()
-    setStatus({ running: false, urls: [], startedAt: null, activeConnections: 0 })
+    setStatus({ running: false, urls: [], startedAt: null, activeConnections: 0, https: false, httpsPort: 0 })
     logActivity('server_stop', {})
   }
 

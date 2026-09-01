@@ -14,6 +14,9 @@ can be added at any time.
   - **WebDAV** — mount as a normal drive in Finder / Windows Explorer / Android; each
     account is rooted at its own private home folder (admins get the whole drive).
 - **Accounts + per‑folder permissions (RBAC)** — read / read‑write / admin per user, per folder.
+- **Optional encrypted HTTPS** — one‑click self‑signed TLS with a built‑in local
+  certificate authority; install the root certificate once per device for a trusted
+  padlock, and the server cert auto‑renews as your Wi‑Fi IP changes.
 - **Private per‑user home folders** — every account automatically gets its own
   `LocalDrive/<username>/` folder and is confined to it over both the web UI **and** WebDAV;
   admins can browse the whole drive and reset any user's password.
@@ -101,14 +104,19 @@ src/
 ## Security notes
 
 - Web sessions use a signed, httpOnly cookie; WebDAV uses HTTP Basic/Digest.
-- **WebDAV Basic auth is cleartext over plain HTTP on your LAN.** A self‑signed **TLS/HTTPS**
-  option is the recommended near‑term add‑on; keep the server on a trusted network until then.
+- **Plain HTTP sends credentials in the clear on your LAN.** Turn on **Enable HTTPS**
+  in **Settings** to serve an encrypted listener (default port `4843`) alongside HTTP.
+  LocalDrive runs a small local certificate authority: install the root certificate
+  once per device (**Settings ▸ Download certificate**, or `GET /api/cert`) for a
+  trusted padlock. The server certificate auto‑renews when your LAN IP changes — no
+  need to re‑trust anything. HTTPS also unlocks full PWA install/offline support,
+  which browsers only allow over a secure origin.
 - Bind address defaults to `0.0.0.0` (whole LAN). Switch to `127.0.0.1` in **Settings** to
   restrict access to this Mac only.
 
 ## Roadmap ideas
 
-Public share links (expiry + password), trash/version history, self‑signed HTTPS, phone
+Public share links (expiry + password), trash/version history, phone
 photo auto‑backup, two‑way sync client, media transcoding, per‑user quotas + SMART health
 alerts, duplicate finder, guest drop‑box links, and secure off‑LAN access (Tailscale/WireGuard).
 

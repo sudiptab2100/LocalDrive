@@ -66,6 +66,10 @@ export interface ServerStatus {
   urls: string[]
   startedAt: string | null
   activeConnections: number
+  /** Whether the encrypted HTTPS listener is active. */
+  https: boolean
+  /** Port the HTTPS listener is bound to (when `https` is true). */
+  httpsPort: number
 }
 
 export interface TransferStat {

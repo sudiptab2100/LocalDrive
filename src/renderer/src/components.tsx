@@ -459,6 +459,66 @@ export function SettingsPanel(): JSX.Element {
           />
           <span>Start the server automatically when the app launches</span>
         </label>
+
+        <div className="divider" />
+
+        <label className="field-row">
+          <input
+            type="checkbox"
+            checked={cfg.httpsEnabled}
+            onChange={(e) => setCfg({ ...cfg, httpsEnabled: e.target.checked })}
+          />
+          <span>Enable HTTPS (encrypted — install the certificate on each device)</span>
+        </label>
+        {cfg.httpsEnabled && (
+          <>
+            <label className="field">
+              <span>HTTPS port</span>
+              <input
+                type="number"
+                value={cfg.httpsPort}
+                onChange={(e) => setCfg({ ...cfg, httpsPort: Number(e.target.value) })}
+              />
+            </label>
+            <div className="btn-row">
+              <button
+                className="btn small"
+                onClick={() => ld().openExternal(`http://localhost:${cfg.port}/api/cert`)}
+              >
+                Download certificate
+              </button>
+              <button className="btn small" onClick={() => ld().revealCert()}>
+                Reveal certificate file
+              </button>
+            </div>
+            <details className="cert-help small muted">
+              <summary>How to install the certificate on a device</summary>
+              <ul>
+                <li>
+                  <strong>iPhone / iPad:</strong> open the HTTPS link in Safari, allow the profile
+                  download, then Settings ▸ General ▸ VPN &amp; Device Management to install it, and
+                  Settings ▸ General ▸ About ▸ Certificate Trust Settings to switch it on.
+                </li>
+                <li>
+                  <strong>Android:</strong> Settings ▸ Security ▸ Encryption &amp; credentials ▸
+                  Install a certificate ▸ CA certificate, then choose the downloaded file.
+                </li>
+                <li>
+                  <strong>macOS:</strong> double-click the file, add it to the login keychain, then
+                  set it to “Always Trust”.
+                </li>
+                <li>
+                  <strong>Windows:</strong> double-click ▸ Install Certificate ▸ Local Machine ▸
+                  place it in “Trusted Root Certification Authorities”.
+                </li>
+              </ul>
+            </details>
+            <div className="small muted">
+              Restart the server (Server tab) after enabling HTTPS or changing the HTTPS port.
+            </div>
+          </>
+        )}
+
         <button className="btn primary" onClick={save}>
           {saved ? 'Saved!' : 'Save settings'}
         </button>

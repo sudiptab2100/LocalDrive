@@ -31,6 +31,7 @@ export const IPC = {
   connectInfo: 'app:connect',
   configGet: 'config:get',
   configSet: 'config:set',
+  certReveal: 'cert:reveal',
   openExternal: 'app:openExternal',
   // main -> renderer push events
   evtStatus: 'evt:status',
@@ -60,6 +61,8 @@ export interface AppConfigView {
   host: string
   autoStart: boolean
   shareRootName: string
+  httpsEnabled: boolean
+  httpsPort: number
 }
 
 /** Surface exposed on `window.ld` in the renderer via the preload bridge. */
@@ -95,6 +98,8 @@ export interface LocalDriveApi {
     get(): Promise<AppConfigView>
     set(patch: Partial<AppConfigView>): Promise<AppConfigView>
   }
+  /** Reveal the root CA certificate file in the OS file manager. */
+  revealCert(): Promise<void>
   openExternal(url: string): Promise<void>
   platform: string
 }

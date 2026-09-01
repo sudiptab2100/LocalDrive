@@ -12,7 +12,7 @@ export function lanAddresses(): string[] {
   return out
 }
 
-export function buildUrls(port: number, hostname: string): string[] {
+export function buildUrls(port: number, hostname: string, scheme: 'http' | 'https' = 'http'): string[] {
   const isPrivate = (ip: string): boolean =>
     /^192\.168\./.test(ip) || /^10\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip)
   // Prefer common private-LAN IPs (the WiFi address) over VPN/other interfaces.
@@ -20,10 +20,10 @@ export function buildUrls(port: number, hostname: string): string[] {
   const urls = new Set<string>()
   // IP URLs come first: they work on every client (including Android, which
   // often cannot resolve mDNS) and never change on Bonjour name collisions.
-  for (const ip of ips) urls.add(`http://${ip}:${port}`)
+  for (const ip of ips) urls.add(`${scheme}://${ip}:${port}`)
   // The "<name>.local" mDNS hostname is convenient on Apple/most modern OSes but
   // needs Bonjour and its numeric suffix can drift, so it is listed last.
-  urls.add(`http://${hostname}:${port}`)
+  urls.add(`${scheme}://${hostname}:${port}`)
   return [...urls]
 }
 

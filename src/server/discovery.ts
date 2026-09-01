@@ -6,7 +6,7 @@ import QRCode from 'qrcode'
 let bonjour: Bonjour | null = null
 let services: Service[] = []
 
-export function startDiscovery(port: number): void {
+export function startDiscovery(port: number, opts: { httpsPort?: number } = {}): void {
   stopDiscovery()
   try {
     bonjour = new Bonjour()
@@ -14,6 +14,21 @@ export function startDiscovery(port: number): void {
       bonjour.publish({ name: 'LocalDrive', type: 'http', port, txt: { path: '/' } })
     )
     services.push(bonjour.publish({ name: 'LocalDrive WebDAV', type: 'webdav', port, txt: { path: '/dav' } }))
+    // When HTTPS is enabled, advertise the secure endpoints too so capable
+    // clients can prefer the encrypted service.
+    if (opts.httpsPort) {
+      services.push(
+        bonjour.publish({ name: 'LocalDrive (HTTPS)', type: 'https', port: opts.httpsPort, txt: { path: '/' } })
+      )
+      services.push(
+        bonjour.publish({
+          name: 'LocalDrive WebDAV (HTTPS)',
+          type: 'webdavs',
+          port: opts.httpsPort,
+          txt: { path: '/dav' }
+        })
+      )
+    }
   } catch {
     /* mDNS is best-effort; ignore failures */
   }

@@ -21,6 +21,8 @@ authRouter.post('/login', (req, res) => {
   res.cookie(AUTH_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
+    // Only mark Secure on TLS requests so HTTP logins keep working in dual mode.
+    secure: req.secure,
     path: '/',
     maxAge: 30 * 24 * 60 * 60 * 1000
   })

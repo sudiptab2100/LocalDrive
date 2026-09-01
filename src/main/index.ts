@@ -22,6 +22,7 @@ import { getDashboard } from '../server/dashboard.js'
 import { qrDataUrl } from '../server/discovery.js'
 import { pickQrUrl } from '../server/util/net.js'
 import { getStatus } from '../server/status.js'
+import { getCaCertPath } from '../server/tls.js'
 import { bus, EVENTS } from '../server/events.js'
 import { IPC, type UserWithAcls } from '../shared/ipc.js'
 import type { Role, Permission } from '../shared/types.js'
@@ -276,13 +277,33 @@ function registerIpc(): void {
 
   ipcMain.handle(IPC.configGet, () => {
     const c = loadConfig()
-    return { port: c.port, host: c.host, autoStart: c.autoStart, shareRootName: c.shareRootName }
+    return {
+      port: c.port,
+      host: c.host,
+      autoStart: c.autoStart,
+      shareRootName: c.shareRootName,
+      httpsEnabled: c.httpsEnabled,
+      httpsPort: c.httpsPort
+    }
   })
   ipcMain.handle(IPC.configSet, (_e, patch: Record<string, unknown>) => {
     const c = loadConfig()
     const next = { ...c, ...patch }
     saveConfig(next)
-    return { port: next.port, host: next.host, autoStart: next.autoStart, shareRootName: next.shareRootName }
+    return {
+      port: next.port,
+      host: next.host,
+      autoStart: next.autoStart,
+      shareRootName: next.shareRootName,
+      httpsEnabled: next.httpsEnabled,
+      httpsPort: next.httpsPort
+    }
+  })
+
+  ipcMain.handle(IPC.certReveal, () => {
+    const p = getCaCertPath()
+    if (existsSync(p)) shell.showItemInFolder(p)
+    else shell.openPath(dirname(p))
   })
 
   ipcMain.handle(IPC.openExternal, (_e, url: string) => shell.openExternal(url))

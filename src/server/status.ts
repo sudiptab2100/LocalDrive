@@ -8,7 +8,9 @@ let status: ServerStatus = {
   hostname: '',
   urls: [],
   startedAt: null,
-  activeConnections: 0
+  activeConnections: 0,
+  https: false,
+  httpsPort: 0
 }
 
 export function setStatus(patch: Partial<ServerStatus>): void {

@@ -10,6 +10,7 @@ import { searchRouter } from './routes/search.js'
 import { statsRouter } from './routes/stats.js'
 import { usersRouter } from './routes/users.js'
 import { getStatus } from '../status.js'
+import { getCaCertPem } from '../tls.js'
 import { qrDataUrl } from '../discovery.js'
 import { pickQrUrl } from '../util/net.js'
 
@@ -45,6 +46,20 @@ export function createApp(opts: AppOptions = {}): Express {
   // Health check (unauthenticated).
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, status: getStatus() })
+  })
+
+  // Download the root CA certificate for client trust installation. The CA
+  // certificate is public (holds no secret), and devices need it before they
+  // can trust the server, so this endpoint is intentionally unauthenticated.
+  app.get('/api/cert', (_req, res) => {
+    const pem = getCaCertPem()
+    if (!pem) {
+      res.status(404).json({ error: 'No certificate available (enable HTTPS first)' })
+      return
+    }
+    res.setHeader('Content-Type', 'application/x-x509-ca-cert')
+    res.setHeader('Content-Disposition', 'attachment; filename="LocalDrive-CA.crt"')
+    res.send(pem)
   })
 
   app.use('/api/auth', authRouter)
