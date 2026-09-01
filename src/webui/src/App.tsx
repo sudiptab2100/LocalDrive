@@ -311,6 +311,7 @@ export function App() {
           {connectQr ? <img src={connectQr} alt="Connection QR code" /> : <p>Loading QR…</p>}
           <p className="muted">Scan on a phone or tablet connected to this WiFi network.</p>
           <p className="muted small">The QR points to this Mac's IP, so it opens on any device — including Android, where <code>.local</code> names often don't resolve.</p>
+          <p className="muted small">To mount as a drive instead, use a WebDAV client (not a browser) at <code>{location.origin + '/dav'}</code> and sign in with your username &amp; password.</p>
         </aside>
       )}
 

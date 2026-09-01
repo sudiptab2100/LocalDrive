@@ -393,7 +393,10 @@ export function ConnectPanel(): JSX.Element {
             Windows use the IP link.
           </div>
           <div className="small muted">
-            To mount as a drive, use WebDAV at <code>{(info.urls[0] || '') + '/dav'}</code>
+            To mount as a network drive, use a WebDAV client (macOS Finder ▸ ⌘K, Windows ▸ “Map
+            network drive”, or a mobile WebDAV app) — <strong>not a browser</strong> — at{' '}
+            <code>{(info.urls[0] || '') + '/dav'}</code>, then sign in with your LocalDrive
+            username &amp; password.
           </div>
         </div>
       </div>
