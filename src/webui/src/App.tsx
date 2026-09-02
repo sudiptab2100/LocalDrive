@@ -325,7 +325,7 @@ export function App() {
         </aside>
       )}
 
-      <main className="main">
+      <main className={`main${selected.size > 0 ? ' has-bulk' : ''}`}>
         <section className="toolbar panel">
           <Breadcrumb rootLabel={confined ? 'Home' : currentDrive?.label || 'Drive'} path={currentPath} onNavigate={setCurrentPath} />
           <div className="toolbar-actions">
@@ -368,6 +368,12 @@ export function App() {
             >
               <IconUpload />
             </button>
+            <span className="show-mobile toolbar-more">
+              <OverflowMenu
+                label="More actions"
+                items={[{ label: 'Connect a device', icon: '▦', onSelect: loadConnect }]}
+              />
+            </span>
           </div>
         </section>
 
@@ -386,12 +392,16 @@ export function App() {
 
         {selected.size > 0 && (
           <section className="bulkbar">
-            <strong>{selected.size} selected</strong>
-            <button onClick={() => openDownload(zipUrl(currentDriveId, selectedPaths))}>Download ZIP</button>
-            <button onClick={() => moveOrCopy('move', selectedPaths)}>Move</button>
-            <button onClick={() => moveOrCopy('copy', selectedPaths)}>Copy</button>
-            <button className="danger" onClick={() => deletePaths(selectedPaths)}>Delete</button>
-            <button onClick={() => setSelected(new Set())}>Clear</button>
+            <div className="bulk-head">
+              <strong className="bulk-count">{selected.size} selected</strong>
+              <button className="bulk-clear" onClick={() => setSelected(new Set())}>Clear</button>
+            </div>
+            <div className="bulk-actions">
+              <button onClick={() => openDownload(zipUrl(currentDriveId, selectedPaths))}><span aria-hidden="true">⬇</span> ZIP</button>
+              <button onClick={() => moveOrCopy('move', selectedPaths)}><span aria-hidden="true">↪</span> Move</button>
+              <button onClick={() => moveOrCopy('copy', selectedPaths)}><span aria-hidden="true">⧉</span> Copy</button>
+              <button className="danger" onClick={() => deletePaths(selectedPaths)}><span aria-hidden="true">⌫</span> Delete</button>
+            </div>
           </section>
         )}
 
@@ -470,7 +480,7 @@ export function App() {
           <div className="upload-modal">
             <button className="close" onClick={() => setShowUploader(false)}>×</button>
             <h2>Upload to {currentPath || 'root'}</h2>
-            <Dashboard uppy={uppy} proudlyDisplayPoweredByUppy={false} height={420} />
+            <Dashboard uppy={uppy} proudlyDisplayPoweredByUppy={false} height={Math.max(300, Math.min(420, Math.round(window.innerHeight * 0.5)))} />
             <ProgressBar uppy={uppy} />
           </div>
         </div>
