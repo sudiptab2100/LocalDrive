@@ -35,6 +35,7 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchHits, setSearchHits] = useState<SearchHit[]>([])
   const [searching, setSearching] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
   const [showUploader, setShowUploader] = useState(false)
   const [showConnect, setShowConnect] = useState(false)
   const [connectQr, setConnectQr] = useState<string | null>(null)
@@ -235,7 +236,14 @@ export function App() {
   const filesOnly = entries.filter((entry) => !entry.isDir)
   const previewIndex = preview ? filesOnly.findIndex((entry) => entry.path === preview.path) : -1
 
+  const closeSearch = () => {
+    setShowSearch(false)
+    setSearchQuery('')
+    setSearchHits([])
+  }
+
   const openSearchHit = (hit: SearchHit) => {
+    setShowSearch(false)
     setSearchQuery('')
     setSearchHits([])
     if (hit.drive !== currentDriveId) setCurrentDriveId(hit.drive)
@@ -287,20 +295,6 @@ export function App() {
               ))}
             </select>
           )}
-          <div className="search-wrap">
-            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search files…" aria-label="Search files" />
-            {(searchHits.length > 0 || searching) && (
-              <div className="search-panel">
-                {searching && <div className="muted pad">Searching…</div>}
-                {!searching && searchHits.map((hit) => (
-                  <button key={`${hit.drive}:${hit.path}`} onClick={() => openSearchHit(hit)}>
-                    <span>{hit.isDir ? '📁' : '📄'}</span>
-                    <span><strong>{hit.name}</strong><small>{hit.path || 'Root'}</small></span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
         <div className="topbar-tools">
           <button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle color theme">
@@ -329,6 +323,15 @@ export function App() {
         <section className="toolbar panel">
           <Breadcrumb rootLabel={confined ? 'Home' : currentDrive?.label || 'Drive'} path={currentPath} onNavigate={setCurrentPath} />
           <div className="toolbar-actions">
+            <button
+              className="icon-btn"
+              onClick={() => setShowSearch(true)}
+              aria-label="Search files"
+              title="Search"
+              data-tip="Search"
+            >
+              <IconSearch />
+            </button>
             <button
               className="icon-btn"
               onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
@@ -474,6 +477,40 @@ export function App() {
           </section>
         </DropZone>
       </main>
+
+      {showSearch && (
+        <div className="modal-backdrop search-backdrop" role="dialog" aria-modal="true" aria-label="Search files" onClick={closeSearch}>
+          <div className="search-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="search-modal-head">
+              <span className="search-ico"><IconSearch /></span>
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Escape') closeSearch() }}
+                placeholder="Search files…"
+                aria-label="Search files"
+              />
+              <button className="close" onClick={closeSearch} aria-label="Close search">×</button>
+            </div>
+            <div className="search-results">
+              {searching && <div className="muted pad">Searching…</div>}
+              {!searching && searchQuery.trim().length < 2 && (
+                <div className="muted pad">Type at least 2 characters to search.</div>
+              )}
+              {!searching && searchQuery.trim().length >= 2 && searchHits.length === 0 && (
+                <div className="muted pad">No matches found.</div>
+              )}
+              {!searching && searchHits.map((hit) => (
+                <button key={`${hit.drive}:${hit.path}`} onClick={() => openSearchHit(hit)}>
+                  <span>{hit.isDir ? '📁' : '📄'}</span>
+                  <span><strong>{hit.name}</strong><small>{hit.path || 'Root'}</small></span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showUploader && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
@@ -973,6 +1010,15 @@ function IconUpload() {
       <path d="M10 13.2V4.6" />
       <path d="M6.4 8.2 10 4.6l3.6 3.6" />
       <path d="M3.8 13v1.4A1.6 1.6 0 0 0 5.4 16h9.2a1.6 1.6 0 0 0 1.6-1.6V13" />
+    </svg>
+  )
+}
+
+function IconSearch() {
+  return (
+    <svg {...svgProps}>
+      <circle cx="8.6" cy="8.6" r="5.4" />
+      <path d="m12.6 12.6 4.2 4.2" />
     </svg>
   )
 }
