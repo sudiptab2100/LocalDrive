@@ -346,7 +346,7 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
   .hide-mobile { display: none; }
   .show-mobile { display: inline-flex; }
   .toolbar, .drive-card, .preview-modal header { display: grid; grid-template-columns: 1fr; }
-  .toolbar-actions { justify-content: flex-start; }
+  .toolbar-actions { justify-content: space-between; }
   .drive-card { gap: var(--s3); }
   .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
   .bulkbar { top: 8.5rem; }
