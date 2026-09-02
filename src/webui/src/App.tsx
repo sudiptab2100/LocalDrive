@@ -1,4 +1,3 @@
-import { Dashboard, ProgressBar } from '@uppy/react'
 import Uppy from '@uppy/core'
 import Tus from '@uppy/tus'
 import type { DriveInfo, FileEntry, User, RegisterResult } from '@shared/types'
@@ -14,6 +13,10 @@ interface Toast {
   kind: 'success' | 'error' | 'info'
   message: string
 }
+
+type Dialog =
+  | { kind: 'prompt'; title: string; label?: string; value: string; placeholder?: string; confirmLabel: string; allowEmpty?: boolean; onConfirm: (value: string) => void }
+  | { kind: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => void }
 
 const textDecoderLimit = 1024 * 1024
 
@@ -37,6 +40,7 @@ export function App() {
   const [searching, setSearching] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [showUploader, setShowUploader] = useState(false)
+  const [dialog, setDialog] = useState<Dialog | null>(null)
   const [showConnect, setShowConnect] = useState(false)
   const [connectQr, setConnectQr] = useState<string | null>(null)
 
@@ -207,29 +211,71 @@ export function App() {
 
   const makeFolder = () => {
     if (!currentDriveId) return
-    const name = window.prompt('New folder name')?.trim()
-    if (name) void mutate(() => api.mkdir(currentDriveId, currentPath, name), 'Folder created')
+    setDialog({
+      kind: 'prompt',
+      title: 'New folder',
+      placeholder: 'Folder name',
+      value: '',
+      confirmLabel: 'Create',
+      onConfirm: (value) => {
+        const name = value.trim()
+        if (name) void mutate(() => api.mkdir(currentDriveId, currentPath, name), 'Folder created')
+      }
+    })
   }
 
   const renameEntry = (entry: FileEntry) => {
-    const newName = window.prompt('Rename to', entry.name)?.trim()
-    if (newName && newName !== entry.name) void mutate(() => api.rename(currentDriveId, entry.path, newName), 'Renamed')
+    setDialog({
+      kind: 'prompt',
+      title: 'Rename',
+      label: `Rename “${entry.name}”`,
+      value: entry.name,
+      confirmLabel: 'Rename',
+      onConfirm: (value) => {
+        const newName = value.trim()
+        if (newName && newName !== entry.name) void mutate(() => api.rename(currentDriveId, entry.path, newName), 'Renamed')
+      }
+    })
   }
 
   const deletePaths = (paths: string[]) => {
-    if (!paths.length || !window.confirm(`Delete ${paths.length} item${paths.length === 1 ? '' : 's'}? This cannot be undone.`)) return
-    void mutate(() => api.delete(currentDriveId, paths), 'Deleted')
+    if (!paths.length) return
+    setDialog({
+      kind: 'confirm',
+      title: `Delete ${paths.length} item${paths.length === 1 ? '' : 's'}?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: () => void mutate(() => api.delete(currentDriveId, paths), 'Deleted')
+    })
   }
 
   const moveOrCopy = (mode: 'move' | 'copy', paths: string[]) => {
     if (!paths.length) return
-    const dest = window.prompt(`${mode === 'move' ? 'Move' : 'Copy'} to folder path`, currentPath)?.trim()
-    if (dest === undefined) return
-    void mutate(() => (mode === 'move' ? api.move(currentDriveId, paths, dest) : api.copy(currentDriveId, paths, dest)), mode === 'move' ? 'Moved' : 'Copied')
+    setDialog({
+      kind: 'prompt',
+      title: mode === 'move' ? 'Move items' : 'Copy items',
+      label: 'Destination folder path (leave blank for the root)',
+      placeholder: 'e.g. Documents/Reports',
+      value: currentPath,
+      confirmLabel: mode === 'move' ? 'Move' : 'Copy',
+      allowEmpty: true,
+      onConfirm: (value) => {
+        const dest = value.trim()
+        void mutate(() => (mode === 'move' ? api.move(currentDriveId, paths, dest) : api.copy(currentDriveId, paths, dest)), mode === 'move' ? 'Moved' : 'Copied')
+      }
+    })
   }
 
   const openDownload = (url: string) => {
     window.location.assign(url)
+  }
+
+  const closeUploader = () => {
+    setShowUploader(false)
+    uppy.getFiles().forEach((file) => {
+      if (file.progress?.uploadComplete) uppy.removeFile(file.id)
+    })
   }
 
   const selectedPaths = Array.from(selected)
@@ -513,14 +559,11 @@ export function App() {
       )}
 
       {showUploader && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="upload-modal">
-            <button className="close" onClick={() => setShowUploader(false)}>×</button>
-            <h2>Upload to {currentPath || 'root'}</h2>
-            <Dashboard uppy={uppy} proudlyDisplayPoweredByUppy={false} height={Math.max(300, Math.min(420, Math.round(window.innerHeight * 0.5)))} />
-            <ProgressBar uppy={uppy} />
-          </div>
-        </div>
+        <UploadModal
+          uppy={uppy}
+          title={`Upload to ${currentPath || (confined ? 'Home' : 'root')}`}
+          onClose={closeUploader}
+        />
       )}
 
       {preview && (
@@ -534,6 +577,30 @@ export function App() {
         />
       )}
 
+      {dialog && (
+        dialog.kind === 'prompt' ? (
+          <PromptModal
+            title={dialog.title}
+            label={dialog.label}
+            initialValue={dialog.value}
+            placeholder={dialog.placeholder}
+            confirmLabel={dialog.confirmLabel}
+            allowEmpty={dialog.allowEmpty}
+            onCancel={() => setDialog(null)}
+            onConfirm={(value) => { setDialog(null); dialog.onConfirm(value) }}
+          />
+        ) : (
+          <ConfirmModal
+            title={dialog.title}
+            message={dialog.message}
+            confirmLabel={dialog.confirmLabel}
+            danger={dialog.danger}
+            onCancel={() => setDialog(null)}
+            onConfirm={() => { setDialog(null); dialog.onConfirm() }}
+          />
+        )
+      )}
+
       <div className="toasts" aria-live="polite">
         {toasts.map((item) => <div key={item.id} className={`toast ${item.kind}`}>{item.message}</div>)}
       </div>
@@ -543,6 +610,185 @@ export function App() {
 
 function Splash() {
   return <div className="splash"><img src="/icons/icon-192.png" alt="" /><p>Opening LocalDrive…</p></div>
+}
+
+function PromptModal({ title, label, initialValue, placeholder, confirmLabel, allowEmpty, onCancel, onConfirm }: {
+  title: string; label?: string; initialValue: string; placeholder?: string; confirmLabel: string; allowEmpty?: boolean; onCancel: () => void; onConfirm: (value: string) => void
+}) {
+  const [value, setValue] = useState(initialValue)
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const el = inputRef.current
+    if (el) { el.focus(); el.select() }
+  }, [])
+  const canConfirm = allowEmpty || value.trim().length > 0
+  const submit = () => { if (canConfirm) onConfirm(value) }
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title} onClick={onCancel}>
+      <div className="form-modal" onClick={(event) => event.stopPropagation()}>
+        <h2>{title}</h2>
+        {label && <p className="form-hint">{label}</p>}
+        <input
+          ref={inputRef}
+          value={value}
+          placeholder={placeholder}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') { event.preventDefault(); submit() }
+            else if (event.key === 'Escape') onCancel()
+          }}
+        />
+        <div className="modal-actions">
+          <button className="ghost" onClick={onCancel}>Cancel</button>
+          <button className="primary" onClick={submit} disabled={!canConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ConfirmModal({ title, message, confirmLabel, danger, onCancel, onConfirm }: {
+  title: string; message: string; confirmLabel: string; danger?: boolean; onCancel: () => void; onConfirm: () => void
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title} onClick={onCancel}>
+      <div className="form-modal" onClick={(event) => event.stopPropagation()}>
+        <h2>{title}</h2>
+        <p className="form-hint">{message}</p>
+        <div className="modal-actions">
+          <button className="ghost" onClick={onCancel}>Cancel</button>
+          <button className={danger ? 'danger' : 'primary'} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface UploadItem { id: string; name: string; size: number; percentage: number; started: boolean; complete: boolean; error?: string }
+
+function UploadModal({ uppy, title, onClose }: { uppy: Uppy; title: string; onClose: () => void }) {
+  const [items, setItems] = useState<UploadItem[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const errorsRef = useRef<Record<string, string>>({})
+
+  useEffect(() => {
+    const sync = () => {
+      setItems(uppy.getFiles().map((file) => ({
+        id: file.id,
+        name: file.name ?? 'file',
+        size: file.size ?? 0,
+        percentage: Math.round(file.progress?.percentage ?? 0),
+        started: Boolean(file.progress?.uploadStarted),
+        complete: Boolean(file.progress?.uploadComplete),
+        error: errorsRef.current[file.id]
+      })))
+    }
+    const onError = (file: { id?: string } | undefined, error: Error) => {
+      if (file?.id) errorsRef.current[file.id] = error?.message || 'Upload failed'
+      setUploading(false)
+      sync()
+    }
+    const onComplete = () => { setUploading(false); sync() }
+    sync()
+    uppy.on('file-added', sync)
+    uppy.on('file-removed', sync)
+    uppy.on('upload-progress', sync)
+    uppy.on('upload-success', sync)
+    uppy.on('upload-error', onError)
+    uppy.on('complete', onComplete)
+    return () => {
+      uppy.off('file-added', sync)
+      uppy.off('file-removed', sync)
+      uppy.off('upload-progress', sync)
+      uppy.off('upload-success', sync)
+      uppy.off('upload-error', onError)
+      uppy.off('complete', onComplete)
+    }
+  }, [uppy])
+
+  const openPicker = () => inputRef.current?.click()
+  const addFiles = (files: FileList | null) => {
+    if (!files) return
+    Array.from(files).forEach((file) => {
+      try {
+        uppy.addFile({ name: file.name, type: file.type, data: file })
+      } catch {
+        // Uppy surfaces duplicate/validation errors via events.
+      }
+    })
+  }
+
+  const queuedCount = items.filter((item) => !item.complete && !item.error).length
+  const allDone = items.length > 0 && queuedCount === 0
+  const startUpload = () => {
+    if (queuedCount === 0) return
+    setUploading(true)
+    void uppy.upload().catch(() => setUploading(false))
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Upload files" onClick={onClose}>
+      <div className="upload-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="upload-head">
+          <h2>{title}</h2>
+          <button className="close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+
+        <div
+          className={`uploader-drop${dragging ? ' dragging' : ''}`}
+          role="button"
+          tabIndex={0}
+          onClick={openPicker}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPicker() } }}
+          onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => { event.preventDefault(); setDragging(false); addFiles(event.dataTransfer.files) }}
+        >
+          <input ref={inputRef} type="file" multiple hidden onChange={(event) => { addFiles(event.target.files); event.target.value = '' }} />
+          <span className="uploader-drop-icon" aria-hidden="true"><IconUpload /></span>
+          <strong>Drag &amp; drop files here</strong>
+          <span className="muted">or</span>
+          <button type="button" className="primary" onClick={(event) => { event.stopPropagation(); openPicker() }}>Choose files</button>
+        </div>
+
+        {items.length > 0 && (
+          <div className="uploader-list">
+            {items.map((item) => (
+              <div key={item.id} className={`uploader-item${item.error ? ' error' : ''}`}>
+                <span className="uploader-item-icon" aria-hidden="true">{item.error ? '⚠️' : item.complete ? '✅' : '📄'}</span>
+                <div className="uploader-item-meta">
+                  <strong title={item.name}>{item.name}</strong>
+                  <small>{item.error ? item.error : `${formatBytes(item.size)} · ${item.complete ? 'Done' : item.started ? `${item.percentage}%` : 'Queued'}`}</small>
+                  <div className="uploader-progress"><span style={{ width: `${item.complete ? 100 : item.percentage}%` }} /></div>
+                </div>
+                {(!item.complete && (!item.started || item.error)) && (
+                  <button className="uploader-remove" onClick={() => uppy.removeFile(item.id)} aria-label={`Remove ${item.name}`}>×</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <span className="uploader-summary muted">
+            {items.length === 0 ? 'No files selected' : `${items.length} file${items.length === 1 ? '' : 's'}${queuedCount ? ` · ${queuedCount} queued` : ' · all uploaded'}`}
+          </span>
+          <button className="ghost" onClick={onClose}>{allDone ? 'Done' : 'Cancel'}</button>
+          <button className="primary" onClick={startUpload} disabled={uploading || queuedCount === 0}>
+            {uploading ? 'Uploading…' : `Upload${queuedCount ? ` ${queuedCount}` : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function LoginScreen({ onLogin, onRegister, toast }: { onLogin: (username: string, password: string) => Promise<void>; onRegister: (username: string, password: string) => Promise<RegisterResult>; toast: (kind: Toast['kind'], message: string) => void }) {
