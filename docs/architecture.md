@@ -1,0 +1,123 @@
+# Architecture
+
+LocalDrive is one Electron app made of four runtime surfaces plus an embedded
+server. The server runs **inside the Electron main process**, so "start the app"
+and "start the server" are the same process (the server can also run standalone
+for development).
+
+## Runtime surfaces
+
+```
+┌─────────────────────────── Electron app (one process tree) ───────────────────────────┐
+│                                                                                        │
+│  Main process (Node)                    Renderer (Chromium)                            │
+│  src/main/index.ts                      src/renderer  ── Desktop control center (React)│
+│   • Tray + window + lifecycle            │  tabs: Dashboard/Drives/Users/Connect/Setting│
+│   • ipcMain.handle(...) handlers  ◄──────┘  calls window.ld.* (typed IPC)              │
+│   • /Volumes hot‑plug watcher                    ▲                                      │
+│   • owns ServerManager                           │ contextBridge                        │
+│        │                                  src/preload/index.ts → exposes window.ld      │
+│        ▼                                                                                │
+│  Embedded server (src/server, same Node process)                                        │
+│   Express app  ─ /api/*  REST                                                            │
+│                ─ /dav/*  WebDAV (webdav-server)                                          │
+│                ─ static  the web PWA (out/webui)                                         │
+│   better-sqlite3 (WAL)  ·  tus uploads  ·  sharp thumbs  ·  bonjour mDNS  ·  node‑forge │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+                         ▲ HTTP/HTTPS + WebDAV over the LAN
+                         │
+   Browsers (the PWA, src/webui)   +   WebDAV clients (Finder / Explorer / Android)
+```
+
+1. **Main process** (`src/main/index.ts`) — Node. Owns the tray, the control‑center
+   window, app lifecycle (single‑instance lock, stay‑in‑tray on close, graceful quit),
+   the `/Volumes` watcher for drive hot‑plug, all `ipcMain` handlers, and the
+   `ServerManager` instance.
+2. **Preload** (`src/preload/index.ts`) — a `contextBridge` that exposes a typed
+   `window.ld` API to the renderer. It is the **only** bridge between renderer and main.
+3. **Renderer** (`src/renderer`) — the desktop control center (React). Admin‑facing:
+   start/stop server, share drives, manage users/approvals, view the dashboard, get the
+   connect QR, change settings. Talks to main exclusively through `window.ld`.
+4. **Web PWA** (`src/webui`) — the client app served to browsers on the LAN. End‑user
+   file manager: browse/upload/download/preview/search within the caller's scope. Talks
+   to the server over `/api/*` with a cookie session.
+
+The **embedded server** (`src/server`) is shared by all of the above. `getDashboard`,
+drive registry, auth, and config are called both by HTTP routes and directly by IPC
+handlers in the main process (no HTTP hop for the desktop UI).
+
+## Server composition (`src/server/http/app.ts`)
+`createApp()` wires middleware and routers in a **deliberate order**:
+
+1. `attachUser` — resolve the caller (cookie / bearer / Basic) on every request; pending
+   accounts resolve to unauthenticated.
+2. `/api/upload` (**tus**) — mounted **before** the JSON body parser because tus needs
+   the raw request stream.
+3. **WebDAV gate** — any path starting with `/dav` is handed to the current WebDAV handler
+   (or `503` if no drives are registered). Mounted at root so webdav-server sees the full
+   `/dav/...` URL.
+4. `express.json({ limit: '5mb' })` — for the REST routes below.
+5. Unauthenticated utility routes: `GET /api/health`, `GET /api/cert`.
+6. Feature routers: `/api/auth`, `/api/drives`, `/api/files`, `/api/search`, `/api/stats`,
+   `/api/users`; plus `GET /api/connect` (auth’d, QR + URLs).
+7. Static PWA (`out/webui`) with an `index.html` SPA fallback that excludes `/api` and `/dav`.
+8. JSON error handler.
+
+See [http-api.md](http-api.md) for the full endpoint reference.
+
+## Server lifecycle & no‑data‑loss restart (`src/server/index.ts`)
+`ServerManager` owns the HTTP (and optional HTTPS) `http.Server` instances and the set
+of open sockets.
+
+**Start** (`start()`):
+1. `loadConfig()` + `getDb()` (ensures schema/migrations).
+2. `syncDrives()` — reconcile detected volumes with the persisted registry.
+3. `backfillHomesAndProvision()` — assign homes to any legacy user, provision every
+   active non‑admin user on every registered drive, and strip stale whole‑drive grants.
+4. `rebuildWebdav()` — build a WebDAV handler for the currently online registered drives.
+5. Listen on `config.host:config.port`. If `httpsEnabled`, also load TLS material and
+   listen on `httpsPort` (**degrades to HTTP‑only** if cert generation fails).
+6. `startDiscovery()` (mDNS), compute `urls` (HTTPS first, then HTTP), `setStatus(...)`.
+
+**Stop** (`stop(drainMs = 8000)`): stop discovery, `server.close()` to refuse new
+connections, wait up to `drainMs` for in‑flight requests, then force‑destroy any lingering
+sockets, **`checkpoint()`** the WAL to the main DB file, and mark status stopped. This is
+what makes stop/restart lossless.
+
+**Restart** = `stop()` then `start()`. **Shutdown** (app quit) = `stop(3000)` +
+`closeDb()`. The main process calls `manager.shutdown()` in `before-quit` (guarded so it
+runs once).
+
+`ServerManager` also listens on the app event bus: when `drivesChanged` fires it rebuilds
+the WebDAV mounts on the fly (no restart needed to add/remove a drive).
+
+## Event bus (`src/server/events.ts`)
+A tiny `EventEmitter` (`bus`) with two events:
+- `drivesChanged` → ServerManager rebuilds WebDAV; main forwards to the renderer
+  (`evt:drivesChanged`) to refresh the Drives tab.
+- `registrationsChanged` → main forwards to the renderer (`evt:registrationsChanged`),
+  updates the pending‑approvals badge, and shows a desktop notification for new requests.
+
+## Standalone server mode (`src/server/standalone.ts`)
+`npm run server:dev` runs the server with **no Electron** (via `tsx watch`). It bootstraps
+the admin, starts the manager, prints URLs/credentials, and installs SIGINT/SIGTERM
+graceful shutdown. Honors `LOCALDRIVE_HOME` (isolated config/data — used for tests) and
+`LOCALDRIVE_WEBUI` (serve a prebuilt PWA). This is the fastest loop for server‑only work.
+
+## Data flow examples
+- **Browser lists a folder:** PWA `api.list()` → `GET /api/files/list?drive&path&hidden`
+  → `driveScope` maps the home‑relative path to a full drive path and checks `read` →
+  `listDirectory` reads the FS, refreshes the search index, and returns entries with the
+  home prefix stripped back off (`scope.out`).
+- **Browser uploads a file:** Uppy (tus) → `POST/PATCH /api/upload` → tus stages the file
+  under `~/Library/Application Support/LocalDrive/uploads/`, authorizes via
+  `onUploadCreate`, then `onUploadFinish` calls `finalizeUpload` which `moveAtomic`s it
+  onto the drive. See [http-api.md](http-api.md#uploads-tus).
+- **Desktop shares a drive:** renderer `window.ld.drives.register(uuid)` → IPC →
+  `registerDrive` + `provisionDriveForAllUsers` → `bus.emit(drivesChanged)` → WebDAV
+  rebuilds and both UIs refresh.
+
+## Related
+- Module‑by‑module detail: [project-structure.md](project-structure.md)
+- Persistence: [data-model.md](data-model.md)
+- Access control: [security-rbac.md](security-rbac.md)

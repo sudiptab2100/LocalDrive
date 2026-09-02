@@ -1,0 +1,52 @@
+# LocalDrive Knowledge Base
+
+An engineer/AI-oriented reference for the LocalDrive codebase. It complements the
+user-facing [`README.md`](../README.md) with the architecture, contracts, and
+operational playbooks needed to make correct, safe changes.
+
+> The concise, always-loaded brief lives at
+> [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
+> This folder is the deep detail it links to.
+
+## What LocalDrive is (one paragraph)
+A native macOS (Electron) app that turns an external drive or folder into a private
+Wi‑Fi/LAN network drive. It embeds an Express HTTP + WebDAV server, a browser PWA,
+per‑user private home folders with role/permission-based access control, resumable
+uploads, search, thumbnails, optional self‑signed HTTPS, and self‑registration with
+admin approval. The server can stop/crash/restart with no data loss, and drives can
+be hot‑added.
+
+## Reading order
+1. [architecture.md](architecture.md) — the four runtime surfaces, the embedded
+   server, data flow, and the no‑data‑loss lifecycle.
+2. [project-structure.md](project-structure.md) — what every file/module does.
+3. [data-model.md](data-model.md) — SQLite schema, config, and on‑disk layout.
+4. [security-rbac.md](security-rbac.md) — auth, ACLs, per‑user confinement, HTTPS.
+5. [http-api.md](http-api.md) — REST + WebDAV endpoint reference.
+6. [ipc-api.md](ipc-api.md) — Electron main ↔ renderer IPC contract (`window.ld`).
+7. [frontend.md](frontend.md) — the web PWA and the desktop control center.
+8. [build-deploy.md](build-deploy.md) — scripts, packaging, and the install/deploy playbook.
+9. [features.md](features.md) — feature catalog and implemented‑vs‑roadmap status.
+10. [conventions.md](conventions.md) — coding conventions, safety patterns, gotchas.
+11. [glossary.md](glossary.md) — domain vocabulary.
+
+## Fast facts
+| Thing | Value |
+| --- | --- |
+| Platform | macOS, Apple Silicon (arm64) |
+| Language | TypeScript (strict, ESM) |
+| UI | React 18 (desktop renderer + web PWA) |
+| Default HTTP port | `4820` |
+| Default HTTPS port | `4843` (opt‑in) |
+| Health check | `GET /api/health` → `{ ok: true, status }` |
+| WebDAV mount | `http://<host>:4820/dav/<DriveName>/` |
+| Config + DB dir | `~/Library/Application Support/LocalDrive/` |
+| On‑drive share root | `<mount>/LocalDrive/` (per‑user: `LocalDrive/<home>/`) |
+| On‑drive app data | `<mount>/.localdrive/` (tmp, thumbs, trash, versions, users.json) |
+| Git branch / remote | `main` @ `github.com/sudiptab2100/LocalDrive` |
+
+## Keeping this KB accurate
+When you change behavior, update the affected page(s). The highest‑value pages to keep
+current are `http-api.md`, `ipc-api.md`, `data-model.md`, and `security-rbac.md` — they
+document contracts other code and clients depend on. Prefer durable facts (contracts,
+invariants, workflows) over volatile specifics (exact line numbers, bundle hashes).

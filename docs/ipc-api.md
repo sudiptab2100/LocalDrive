@@ -1,0 +1,88 @@
+# IPC contract (`window.ld`)
+
+The desktop **renderer** never talks HTTP to the server; it calls the main process
+through a `contextBridge` API exposed as **`window.ld`**. Three files define this
+contract and must be edited **together**:
+
+1. **`src/shared/ipc.ts`** — the `IPC` channel‑name map, the `LocalDriveApi` type (the
+   shape of `window.ld`), and IPC view types.
+2. **`src/preload/index.ts`** — implements `LocalDriveApi` as thin `ipcRenderer.invoke`
+   wrappers (+ `on/removeListener` for push events) and calls `exposeInMainWorld('ld', …)`.
+3. **`src/main/index.ts`** — `registerIpc()` provides the matching `ipcMain.handle(...)`
+   for every channel and pushes events via `mainWindow.webContents.send(...)`.
+
+Add a feature by adding a channel to `IPC`, a method to `LocalDriveApi`, a wrapper in
+preload, and a handler in main — then type‑check (`npm run typecheck:node`).
+
+## `window.ld` surface (`LocalDriveApi`)
+
+### `ld.server`
+| Method | IPC channel | Main handler behavior |
+| --- | --- | --- |
+| `status()` | `server:status` | `getStatus()` |
+| `start()` | `server:start` | `manager.start()` + notify + `pushStatus()` |
+| `stop()` | `server:stop` | `manager.stop()` + notify + `pushStatus()` |
+| `restart()` | `server:restart` | `manager.restart()` + `pushStatus()` |
+| `bootstrap()` | `server:bootstrap` | `manager.bootstrap()` → one‑time admin creds or `null` |
+| `onStatus(cb)` | `evt:status` (push) | Subscribe to status changes; returns an unsubscribe fn |
+
+### `ld.drives`
+| Method | IPC channel | Behavior |
+| --- | --- | --- |
+| `listAll()` | `drives:listAll` | `syncDrives()` → `DriveInfo[]` (all detected) |
+| `register(uuid)` | `drives:register` | `registerDrive` + `provisionDriveForAllUsers` → `syncDrives()` |
+| `addFolder()` | `drives:addFolder` | Native folder picker → `registerFolder` + provision |
+| `unregister(uuid)` | `drives:unregister` | `unregisterDrive` → `syncDrives()` |
+| `reveal(uuid)` | `drives:reveal` | Open the drive's mount in Finder |
+| `onChange(cb)` | `evt:drivesChanged` (push) | Fires on hot‑plug or registry change |
+
+### `ld.users`
+| Method | IPC channel | Behavior |
+| --- | --- | --- |
+| `list()` | `users:list` | `UserWithAcls[]` (users + their ACLs) |
+| `create(username,password,role)` | `users:create` | `createUser` + `provisionUserHome` |
+| `remove(id)` | `users:delete` | Delete; if the target was pending, emits a registrations event |
+| `approve(id)` | `users:approve` | `approveUser` + provision + event |
+| `setPassword(id,password)` | `users:setPassword` | Reset password |
+| `setRole(id,role)` | `users:setRole` | `admin` \| `user` |
+| `setAcl(userId,drive,pathPrefix,permission)` | `acl:set` | Upsert an ACL |
+| `removeAcl(id)` | `acl:remove` | Delete an ACL |
+| `onRegistrationsChanged(cb)` | `evt:registrationsChanged` (push) | `{ pending, username }` |
+
+### Top-level
+| Method | IPC channel | Behavior |
+| --- | --- | --- |
+| `dashboard()` | `app:dashboard` | `getDashboard(true)` (admin snapshot) → `DashboardData` |
+| `connect()` | `app:connect` | `{ urls, hostname, qr }` |
+| `config.get()` | `config:get` | `AppConfigView` |
+| `config.set(patch)` | `config:set` | Merge + `saveConfig` → new `AppConfigView` |
+| `revealCert()` | `cert:reveal` | Reveal the root CA file in Finder |
+| `openExternal(url)` | `app:openExternal` | `shell.openExternal` |
+| `platform` | — | `process.platform` (set at preload time) |
+
+## Push events (main → renderer)
+Delivered with `webContents.send(channel, payload)` and consumed via the `on*`
+subscriptions above (each returns an unsubscribe function):
+- **`evt:status`** — `ServerStatus` whenever the server starts/stops/restarts
+  (`pushStatus()` also refreshes the tray menu).
+- **`evt:drivesChanged`** — no payload; fired by the `/Volumes` watcher and by
+  `bus.emit(EVENTS.drivesChanged)`.
+- **`evt:registrationsChanged`** — `{ pending: boolean, username: string }`; drives the
+  desktop pending‑approvals badge and a notification when `pending` is true.
+
+## IPC view types (`src/shared/ipc.ts`)
+- **`UserWithAcls`** = `User & { acls: Acl[] }`.
+- **`DashboardData`** = `{ transfers, drives[], server, activity[], usersCount }`.
+- **`ConnectInfo`** = `{ urls, hostname, qr }`.
+- **`AppConfigView`** = the settings subset of `AppConfig` (no `jwtSecret`, no
+  `registeredDriveUuids`).
+
+## Notes
+- The renderer runs with `contextIsolation: true` and `sandbox: false`; `window.ld` is the
+  only exposed surface. Keep secrets and Node APIs out of the renderer.
+- IPC handlers call server modules **directly** (same process) — there's no HTTP hop for
+  the desktop UI, so these operations work even when the HTTP server is stopped.
+
+## Related
+- The equivalent HTTP surface for browser clients: [http-api.md](http-api.md).
+- Where these are consumed: [frontend.md](frontend.md).
