@@ -329,10 +329,45 @@ export function App() {
         <section className="toolbar panel">
           <Breadcrumb rootLabel={confined ? 'Home' : currentDrive?.label || 'Drive'} path={currentPath} onNavigate={setCurrentPath} />
           <div className="toolbar-actions">
-            <button onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}>{viewMode === 'grid' ? 'List' : 'Grid'}</button>
-            <button onClick={() => setShowHidden((value) => !value)} title="Show or hide dotfiles and macOS ._ files">{showHidden ? 'Hide hidden' : 'Show hidden'}</button>
-            <button onClick={makeFolder} disabled={!currentDriveId || currentDrive?.online === false}>New Folder</button>
-            <button className="primary" onClick={() => setShowUploader(true)} disabled={!currentDriveId || currentDrive?.online === false}>Upload</button>
+            <button
+              className="icon-btn"
+              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+              aria-label={viewMode === 'grid' ? 'List view' : 'Grid view'}
+              title={viewMode === 'grid' ? 'List view' : 'Grid view'}
+              data-tip={viewMode === 'grid' ? 'List view' : 'Grid view'}
+            >
+              {viewMode === 'grid' ? <IconList /> : <IconGrid />}
+            </button>
+            <button
+              className={`icon-btn${showHidden ? ' active' : ''}`}
+              onClick={() => setShowHidden((value) => !value)}
+              aria-label={showHidden ? 'Hide hidden files' : 'Show hidden files'}
+              aria-pressed={showHidden}
+              title={showHidden ? 'Hide hidden' : 'Show hidden'}
+              data-tip={showHidden ? 'Hide hidden' : 'Show hidden'}
+            >
+              {showHidden ? <IconEyeOff /> : <IconEye />}
+            </button>
+            <button
+              className="icon-btn"
+              onClick={makeFolder}
+              disabled={!currentDriveId || currentDrive?.online === false}
+              aria-label="New folder"
+              title="New folder"
+              data-tip="New folder"
+            >
+              <IconFolderPlus />
+            </button>
+            <button
+              className="icon-btn primary"
+              onClick={() => setShowUploader(true)}
+              disabled={!currentDriveId || currentDrive?.online === false}
+              aria-label="Upload"
+              title="Upload"
+              data-tip="Upload"
+            >
+              <IconUpload />
+            </button>
           </div>
         </section>
 
@@ -858,4 +893,76 @@ function toggleSelected(setSelected: React.Dispatch<React.SetStateAction<Set<str
 function usagePercent(drive: DriveInfo): string {
   if (!drive.totalBytes || drive.freeBytes === null) return '0%'
   return `${Math.max(0, Math.min(100, ((drive.totalBytes - drive.freeBytes) / drive.totalBytes) * 100))}%`
+}
+
+// ---- Toolbar icons (inline, dependency-free; inherit currentColor) ----
+const svgProps = {
+  viewBox: '0 0 20 20',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.6,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true
+}
+
+function IconGrid() {
+  return (
+    <svg {...svgProps}>
+      <rect x="2.5" y="2.5" width="6" height="6" rx="1.2" />
+      <rect x="11.5" y="2.5" width="6" height="6" rx="1.2" />
+      <rect x="2.5" y="11.5" width="6" height="6" rx="1.2" />
+      <rect x="11.5" y="11.5" width="6" height="6" rx="1.2" />
+    </svg>
+  )
+}
+
+function IconList() {
+  return (
+    <svg {...svgProps}>
+      <path d="M6.5 5h10.5M6.5 10h10.5M6.5 15h10.5" />
+      <circle cx="3" cy="5" r="0.95" fill="currentColor" stroke="none" />
+      <circle cx="3" cy="10" r="0.95" fill="currentColor" stroke="none" />
+      <circle cx="3" cy="15" r="0.95" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+function IconEye() {
+  return (
+    <svg {...svgProps}>
+      <path d="M1.8 10S4.8 4.6 10 4.6 18.2 10 18.2 10 15.2 15.4 10 15.4 1.8 10 1.8 10Z" />
+      <circle cx="10" cy="10" r="2.3" />
+    </svg>
+  )
+}
+
+function IconEyeOff() {
+  return (
+    <svg {...svgProps}>
+      <path d="M8 4.8A7 7 0 0 1 10 4.6c5.2 0 8.2 5.4 8.2 5.4a13.4 13.4 0 0 1-2.4 2.9" />
+      <path d="M5.1 5.9A13.2 13.2 0 0 0 1.8 10S4.8 15.4 10 15.4a7 7 0 0 0 2.9-.6" />
+      <path d="M8.3 8.3a2.4 2.4 0 0 0 3.4 3.4" />
+      <path d="M2.6 2.6l14.8 14.8" />
+    </svg>
+  )
+}
+
+function IconFolderPlus() {
+  return (
+    <svg {...svgProps}>
+      <path d="M2.6 6A1.5 1.5 0 0 1 4.1 4.5h3.1L8.8 6.4H15.9A1.5 1.5 0 0 1 17.4 7.9v5.6A1.5 1.5 0 0 1 15.9 15H4.1A1.5 1.5 0 0 1 2.6 13.5Z" />
+      <path d="M10 9v3.4M8.3 10.7h3.4" />
+    </svg>
+  )
+}
+
+function IconUpload() {
+  return (
+    <svg {...svgProps}>
+      <path d="M10 13.2V4.6" />
+      <path d="M6.4 8.2 10 4.6l3.6 3.6" />
+      <path d="M3.8 13v1.4A1.6 1.6 0 0 0 5.4 16h9.2a1.6 1.6 0 0 0 1.6-1.6V13" />
+    </svg>
+  )
 }
