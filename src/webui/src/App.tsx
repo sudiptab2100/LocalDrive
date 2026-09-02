@@ -312,7 +312,8 @@ export function App() {
   if (!user) return <LoginScreen onLogin={onLogin} onRegister={onRegister} toast={toast} />
 
   // Non-admins are confined to their own home, which the server presents as the
-  // root "/". Hide drive internals (name, capacity) and show it simply as "Home".
+  // root "/". They still see which drive they're on (real name + capacity) via
+  // the switcher and space card, but their breadcrumb root shows as "Home".
   const confined = user.role !== 'admin'
 
   return (
@@ -331,12 +332,12 @@ export function App() {
                 setCurrentDriveId(event.target.value)
                 setCurrentPath('')
               }}
-              aria-label={confined ? 'Current location' : 'Current drive'}
+              aria-label="Current drive"
             >
               {drives.length === 0 && <option value="">No drives shared</option>}
-              {drives.map((drive, index) => (
+              {drives.map((drive) => (
                 <option key={drive.uuid} value={drive.uuid}>
-                  {confined ? `My Files${drives.length > 1 ? ` ${index + 1}` : ''}` : drive.label}{drive.online ? '' : ' (offline)'}
+                  {drive.label}{drive.online ? '' : ' (offline)'}
                 </option>
               ))}
             </select>
@@ -426,7 +427,7 @@ export function App() {
           </div>
         </section>
 
-        {currentDrive && !confined && (
+        {currentDrive && (
           <section className="drive-card panel">
             <div>
               <strong>{currentDrive.label}</strong>
