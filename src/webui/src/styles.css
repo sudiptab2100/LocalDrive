@@ -190,6 +190,72 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
 .link-btn { background: none; border: none; color: var(--primary); cursor: pointer; padding: var(--s2); font: inherit; justify-self: center; }
 .link-btn:hover { text-decoration: underline; }
 
+/* Auth: segmented tabs, show/hide password, pending success */
+.login-card img { justify-self: center; }
+.login-card h1 { text-align: center; }
+.login-sub { color: var(--muted); margin: 0; text-align: center; }
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s1);
+  padding: var(--s1);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.auth-tabs button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  min-height: var(--control-h);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.auth-tabs button.active {
+  background: var(--panel-strong);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+.pw-field { position: relative; display: grid; }
+.pw-field input { width: 100%; padding-right: 3.8rem; }
+.pw-toggle {
+  position: absolute;
+  top: 50%;
+  right: var(--s2);
+  transform: translateY(-50%);
+  min-height: auto;
+  height: auto;
+  padding: var(--s1) var(--s2);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.pw-toggle:hover { color: var(--text); }
+.pending-block {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s3);
+  align-items: center;
+  padding: var(--s4);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.pending-block p { margin: 0; color: var(--text); }
+.pending-check {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--success);
+  color: #04210f;
+  font-weight: 800;
+}
+
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: var(--s4); background: rgba(2, 6, 12, 0.72); backdrop-filter: blur(12px); }
 .upload-modal { width: min(760px, 100%); padding: var(--s4); position: relative; display: grid; gap: var(--s4); }
 .upload-modal h2 { margin: 0 var(--s6) 0 0; }

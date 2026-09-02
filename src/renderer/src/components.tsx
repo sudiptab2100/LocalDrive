@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { DriveInfo, Role } from '@shared/types'
 import type { DashboardData, ConnectInfo, UserWithAcls, AppConfigView } from '@shared/ipc'
-import { formatBytes, formatDate, usagePct } from './util'
+import { formatBytes, formatDate, timeAgo, usagePct } from './util'
+import {
+  Avatar,
+  ConfirmDialog,
+  Menu,
+  Modal,
+  PasswordInput,
+  Switch,
+  useToast,
+  type MenuItem
+} from './ui'
 
 const ld = () => window.ld
 
@@ -233,13 +243,23 @@ function Stat({ label, value }: { label: string; value: string }): JSX.Element {
 }
 
 // ------------------------------------------------------------------ Users --
+interface ConfirmState {
+  title: string
+  message: string
+  confirmLabel: string
+  danger: boolean
+  run: () => Promise<void>
+}
+
 export function UsersPanel(): JSX.Element {
   const [users, setUsers] = useState<UserWithAcls[]>([])
   const [cfg, setCfg] = useState<AppConfigView | null>(null)
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [role, setRole] = useState<Role>('user')
-  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [showAdd, setShowAdd] = useState(false)
+  const [pwUser, setPwUser] = useState<UserWithAcls | null>(null)
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
+  const toast = useToast()
 
   const load = async (): Promise<void> => setUsers(await ld().users.list())
   useEffect(() => {
@@ -251,25 +271,89 @@ export function UsersPanel(): JSX.Element {
 
   const pending = users.filter((u) => u.status === 'pending')
   const active = users.filter((u) => u.status !== 'pending')
+  const adminCount = active.filter((u) => u.role === 'admin').length
+  const shareRoot = cfg?.shareRootName || 'LocalDrive'
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return q ? active.filter((u) => u.username.toLowerCase().includes(q)) : active
+  }, [active, query])
 
-  const create = async (): Promise<void> => {
-    setError('')
-    if (!username || !password) return setError('Username and password required')
+  const act = async (fn: () => Promise<unknown>, ok: string): Promise<void> => {
     try {
-      await ld().users.create(username.trim(), password, role)
-      setUsername('')
-      setPassword('')
-      setRole('user')
+      await fn()
+      toast('success', ok)
       load()
     } catch (e) {
-      setError((e as Error).message || 'Could not create user')
+      toast('error', (e as Error).message || 'Something went wrong')
     }
   }
 
-  const toggle = async (patch: Partial<AppConfigView>): Promise<void> => {
+  const doConfirm = async (): Promise<void> => {
+    if (!confirmState) return
+    setConfirmBusy(true)
+    try {
+      await confirmState.run()
+      setConfirmState(null)
+    } catch (e) {
+      toast('error', (e as Error).message || 'Something went wrong')
+    } finally {
+      setConfirmBusy(false)
+    }
+  }
+
+  const askDelete = (u: UserWithAcls): void =>
+    setConfirmState({
+      title: `Delete ${u.username}?`,
+      message: `This permanently removes ${u.username}'s account. Any files already stored on the drive are left untouched.`,
+      confirmLabel: 'Delete',
+      danger: true,
+      run: async () => {
+        await ld().users.remove(u.id)
+        toast('success', `Deleted ${u.username}`)
+        load()
+      }
+    })
+
+  const askRole = (u: UserWithAcls): void => {
+    const toAdmin = u.role !== 'admin'
+    setConfirmState({
+      title: toAdmin ? `Make ${u.username} an admin?` : `Make ${u.username} a standard user?`,
+      message: toAdmin
+        ? 'Admins can see every drive and manage all users and settings.'
+        : 'They will lose admin access and only see their own private folder.',
+      confirmLabel: toAdmin ? 'Make admin' : 'Make user',
+      danger: false,
+      run: async () => {
+        await ld().users.setRole(u.id, toAdmin ? 'admin' : 'user')
+        toast('success', `${u.username} is now ${toAdmin ? 'an admin' : 'a standard user'}`)
+        load()
+      }
+    })
+  }
+
+  const askReject = (u: UserWithAcls): void =>
+    setConfirmState({
+      title: `Reject ${u.username}?`,
+      message: `This deletes ${u.username}'s registration request. They can register again later.`,
+      confirmLabel: 'Reject',
+      danger: true,
+      run: async () => {
+        await ld().users.remove(u.id)
+        toast('info', `Rejected ${u.username}`)
+        load()
+      }
+    })
+
+  const toggle = async (patch: Partial<AppConfigView>, ok: string): Promise<void> => {
     if (!cfg) return
     setCfg({ ...cfg, ...patch })
-    setCfg(await ld().config.set(patch))
+    try {
+      setCfg(await ld().config.set(patch))
+      toast('success', ok)
+    } catch (e) {
+      toast('error', (e as Error).message || 'Could not save setting')
+      setCfg(await ld().config.get())
+    }
   }
 
   return (
@@ -280,152 +364,368 @@ export function UsersPanel(): JSX.Element {
           {pending.length > 0 && <span className="badge">{pending.length}</span>}
         </h2>
         <p className="muted">
-          Create accounts. Each user automatically gets a private folder named after them on every
-          shared drive, and can only see inside their own folder. Admins can access everything.
+          Each user automatically gets a private folder named after them on every shared drive and
+          can only see inside their own folder. Admins can access everything.
         </p>
       </div>
 
       {pending.length > 0 && (
-        <div className="card">
-          <h3>
-            Pending approvals <span className="badge">{pending.length}</span>
-          </h3>
-          <p className="small muted">
-            These people registered from the web sign-in page and cannot log in until you approve
-            them.
-          </p>
-          {pending.map((u) => (
-            <div className="row-between pending-row" key={u.id}>
-              <div className="row-main">
-                <strong>{u.username}</strong> <span className="tag warn">awaiting approval</span>
+        <div className="card accent-card">
+          <div className="card-head">
+            <h3>
+              Pending approvals <span className="badge">{pending.length}</span>
+            </h3>
+            <p className="small muted">
+              These people registered from the web sign-in page and can’t log in until you approve
+              them.
+            </p>
+          </div>
+          <div className="user-list">
+            {pending.map((u) => (
+              <div className="user-row" key={u.id}>
+                <Avatar name={u.username} />
+                <div className="user-row-main">
+                  <div className="user-row-top">
+                    <span className="user-name">{u.username}</span>
+                    <span className="role-badge warn">pending</span>
+                  </div>
+                  <div className="user-sub muted">Registered {timeAgo(u.createdAt)}</div>
+                </div>
+                <div className="row-gap">
+                  <button
+                    className="btn primary small"
+                    onClick={() => act(() => ld().users.approve(u.id), `Approved ${u.username}`)}
+                  >
+                    Approve
+                  </button>
+                  <button className="btn danger small" onClick={() => askReject(u)}>
+                    Reject
+                  </button>
+                </div>
               </div>
-              <div className="row-gap">
-                <button
-                  className="btn primary"
-                  onClick={async () => {
-                    await ld().users.approve(u.id)
-                    load()
-                  }}
-                >
-                  Approve
-                </button>
-                <button
-                  className="btn danger"
-                  onClick={async () => {
-                    if (confirm(`Reject and delete ${u.username}'s request?`)) {
-                      await ld().users.remove(u.id)
-                      load()
-                    }
-                  }}
-                >
-                  Reject
-                </button>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
       {cfg && (
         <div className="card">
-          <h3>Registration</h3>
-          <label className="field-row">
-            <input
-              type="checkbox"
+          <div className="card-head">
+            <h3>Registration</h3>
+          </div>
+          <div className="switch-row">
+            <div className="switch-copy">
+              <div className="switch-title">Allow web sign-ups</div>
+              <div className="small muted">
+                People can request an account from the web sign-in page.
+              </div>
+            </div>
+            <Switch
               checked={cfg.registrationEnabled}
-              onChange={(e) => toggle({ registrationEnabled: e.target.checked })}
+              onChange={(v) =>
+                toggle(
+                  { registrationEnabled: v },
+                  v ? 'Web sign-ups enabled' : 'Web sign-ups disabled'
+                )
+              }
             />
-            <span>Allow new people to register an account from the web sign-in page</span>
-          </label>
-          <label className="field-row">
-            <input
-              type="checkbox"
+          </div>
+          <div className={`switch-row ${cfg.registrationEnabled ? '' : 'is-disabled'}`}>
+            <div className="switch-copy">
+              <div className="switch-title">Auto-approve new sign-ups</div>
+              <div className="small muted">
+                New accounts can sign in immediately — no manual approval.
+              </div>
+            </div>
+            <Switch
               checked={cfg.autoApproveRegistrations}
               disabled={!cfg.registrationEnabled}
-              onChange={(e) => toggle({ autoApproveRegistrations: e.target.checked })}
+              onChange={(v) =>
+                toggle(
+                  { autoApproveRegistrations: v },
+                  v ? 'Auto-approval on' : 'Auto-approval off'
+                )
+              }
             />
-            <span>Auto-approve new registrations (they can sign in immediately — no approval)</span>
-          </label>
+          </div>
         </div>
       )}
 
       <div className="card">
-        <h3>Add user</h3>
-        <div className="form-row">
-          <input placeholder="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-          <input
-            placeholder="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
-          <button className="btn primary" onClick={create}>
-            Add
-          </button>
+        <div className="section-head">
+          <div className="chips">
+            <span className="chip">
+              {active.length} {active.length === 1 ? 'user' : 'users'}
+            </span>
+            <span className="chip">
+              {adminCount} admin{adminCount === 1 ? '' : 's'}
+            </span>
+            {pending.length > 0 && <span className="chip warn">{pending.length} pending</span>}
+          </div>
+          <div className="section-actions">
+            <input
+              className="search"
+              placeholder="Search users…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button className="btn primary" onClick={() => setShowAdd(true)}>
+              + Add user
+            </button>
+          </div>
         </div>
-        {error && <div className="error">{error}</div>}
+
+        <div className="user-list">
+          {filtered.length === 0 ? (
+            <div className="empty">
+              {query ? `No users match “${query}”.` : 'No users yet.'}
+            </div>
+          ) : (
+            filtered.map((u) => (
+              <UserRow
+                key={u.id}
+                user={u}
+                adminCount={adminCount}
+                shareRoot={shareRoot}
+                onResetPassword={setPwUser}
+                onToggleRole={askRole}
+                onDelete={askDelete}
+              />
+            ))
+          )}
+        </div>
       </div>
 
-      {active.map((u) => (
-        <UserRow key={u.id} user={u} onChange={load} />
-      ))}
+      {showAdd && <AddUserModal onClose={() => setShowAdd(false)} onCreated={load} />}
+      {pwUser && <ResetPasswordModal user={pwUser} onClose={() => setPwUser(null)} />}
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title || ''}
+        message={confirmState?.message || ''}
+        confirmLabel={confirmState?.confirmLabel}
+        danger={confirmState?.danger}
+        busy={confirmBusy}
+        onConfirm={doConfirm}
+        onCancel={() => setConfirmState(null)}
+      />
     </div>
   )
 }
 
 function UserRow({
   user,
-  onChange
+  adminCount,
+  shareRoot,
+  onResetPassword,
+  onToggleRole,
+  onDelete
 }: {
   user: UserWithAcls
-  onChange: () => void
+  adminCount: number
+  shareRoot: string
+  onResetPassword: (u: UserWithAcls) => void
+  onToggleRole: (u: UserWithAcls) => void
+  onDelete: (u: UserWithAcls) => void
 }): JSX.Element {
+  const isOnlyAdmin = user.role === 'admin' && adminCount === 1
+  const items: MenuItem[] = [
+    { label: 'Reset password…', onClick: () => onResetPassword(user) },
+    {
+      label: user.role === 'admin' ? 'Make standard user' : 'Make admin',
+      onClick: () => onToggleRole(user),
+      disabled: isOnlyAdmin,
+      title: isOnlyAdmin ? 'This is the only admin' : undefined
+    },
+    {
+      label: 'Delete…',
+      danger: true,
+      onClick: () => onDelete(user),
+      disabled: isOnlyAdmin,
+      title: isOnlyAdmin ? 'You can’t delete the only admin' : undefined
+    }
+  ]
   return (
-    <div className="card">
-      <div className="row-between">
-        <div className="row-main">
-          <strong>{user.username}</strong> <span className="tag">{user.role}</span>
-          {user.role !== 'admin' && user.home && (
-            <div className="small muted">Private home: LocalDrive/{user.home}/ on every shared drive</div>
-          )}
+    <div className="user-row">
+      <Avatar name={user.username} />
+      <div className="user-row-main">
+        <div className="user-row-top">
+          <span className="user-name">{user.username}</span>
+          <span className={`role-badge ${user.role}`}>{user.role}</span>
         </div>
-        <div className="row-gap">
-          <button
-            className="btn"
-            onClick={async () => {
-              const pw = prompt(`New password for ${user.username}`)
-              if (pw) await ld().users.setPassword(user.id, pw)
-            }}
-          >
-            Set password
-          </button>
-          <button
-            className="btn"
-            onClick={async () => {
-              await ld().users.setRole(user.id, user.role === 'admin' ? 'user' : 'admin')
-              onChange()
-            }}
-          >
-            Make {user.role === 'admin' ? 'user' : 'admin'}
-          </button>
-          <button
-            className="btn danger"
-            onClick={async () => {
-              if (confirm(`Delete ${user.username}?`)) {
-                await ld().users.remove(user.id)
-                onChange()
-              }
-            }}
-          >
-            Delete
-          </button>
-        </div>
+        {user.role !== 'admin' && user.home ? (
+          <div className="user-sub">
+            Home: {shareRoot}/{user.home}/
+          </div>
+        ) : (
+          <div className="user-sub muted">Full access to all drives</div>
+        )}
       </div>
+      <Menu items={items} />
     </div>
+  )
+}
+
+function AddUserModal({
+  onClose,
+  onCreated
+}: {
+  onClose: () => void
+  onCreated: () => void
+}): JSX.Element {
+  const toast = useToast()
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [role, setRole] = useState<Role>('user')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (): Promise<void> => {
+    setError('')
+    const u = username.trim()
+    if (!u) return setError('Enter a username')
+    if (password.length < 6) return setError('Password must be at least 6 characters')
+    if (password !== confirmPw) return setError('Passwords don’t match')
+    setBusy(true)
+    try {
+      await ld().users.create(u, password, role)
+      toast('success', `Created ${u}`)
+      onCreated()
+      onClose()
+    } catch (e) {
+      setError((e as Error).message || 'Could not create user')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      title="Add user"
+      onClose={onClose}
+      width={440}
+      footer={
+        <>
+          <button className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={submit} disabled={busy}>
+            Create user
+          </button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <label className="fld">
+          <span className="fld-label">Username</span>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="e.g. alex"
+            autoComplete="off"
+          />
+        </label>
+        <label className="fld">
+          <span className="fld-label">Password</span>
+          <PasswordInput
+            value={password}
+            onChange={setPassword}
+            placeholder="At least 6 characters"
+            autoComplete="new-password"
+          />
+        </label>
+        <label className="fld">
+          <span className="fld-label">Confirm password</span>
+          <PasswordInput
+            value={confirmPw}
+            onChange={setConfirmPw}
+            placeholder="Re-enter password"
+            autoComplete="new-password"
+          />
+        </label>
+        <label className="fld">
+          <span className="fld-label">Role</span>
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            <option value="user">Standard user (private folder only)</option>
+            <option value="admin">Admin (full access)</option>
+          </select>
+        </label>
+        {error && <div className="error">{error}</div>}
+      </div>
+    </Modal>
+  )
+}
+
+function ResetPasswordModal({
+  user,
+  onClose
+}: {
+  user: UserWithAcls
+  onClose: () => void
+}): JSX.Element {
+  const toast = useToast()
+  const [password, setPassword] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (): Promise<void> => {
+    setError('')
+    if (password.length < 6) return setError('Password must be at least 6 characters')
+    if (password !== confirmPw) return setError('Passwords don’t match')
+    setBusy(true)
+    try {
+      await ld().users.setPassword(user.id, password)
+      toast('success', `Password updated for ${user.username}`)
+      onClose()
+    } catch (e) {
+      setError((e as Error).message || 'Could not update password')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      title={`Reset password — ${user.username}`}
+      onClose={onClose}
+      width={420}
+      footer={
+        <>
+          <button className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={submit} disabled={busy}>
+            Update password
+          </button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <label className="fld">
+          <span className="fld-label">New password</span>
+          <PasswordInput
+            value={password}
+            onChange={setPassword}
+            placeholder="At least 6 characters"
+            autoFocus
+            autoComplete="new-password"
+          />
+        </label>
+        <label className="fld">
+          <span className="fld-label">Confirm new password</span>
+          <PasswordInput
+            value={confirmPw}
+            onChange={setConfirmPw}
+            placeholder="Re-enter password"
+            autoComplete="new-password"
+          />
+        </label>
+        {error && <div className="error">{error}</div>}
+      </div>
+    </Modal>
   )
 }
 

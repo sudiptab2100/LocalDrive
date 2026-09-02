@@ -468,9 +468,10 @@ function LoginScreen({ onLogin, onRegister, toast }: { onLogin: (username: strin
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  const [pendingMsg, setPendingMsg] = useState('')
   const [canRegister, setCanRegister] = useState(false)
 
   useEffect(() => {
@@ -483,31 +484,38 @@ function LoginScreen({ onLogin, onRegister, toast }: { onLogin: (username: strin
   const swap = (next: 'signin' | 'register') => {
     setMode(next)
     setError('')
-    setNotice('')
     setPassword('')
     setConfirm('')
+    setShowPw(false)
   }
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
-    setNotice('')
-    if (mode === 'register' && password !== confirm) {
-      setError('Passwords do not match')
+    const u = username.trim()
+    if (!u) {
+      setError('Enter a username')
       return
+    }
+    if (mode === 'register') {
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters')
+        return
+      }
+      if (password !== confirm) {
+        setError('Passwords do not match')
+        return
+      }
     }
     setLoading(true)
     try {
       if (mode === 'signin') {
-        await onLogin(username.trim(), password)
+        await onLogin(u, password)
         toast('success', 'Signed in')
       } else {
-        const result = await onRegister(username.trim(), password)
+        const result = await onRegister(u, password)
         if (result.pending) {
-          setNotice(result.message || 'Your account is awaiting admin approval.')
-          setMode('signin')
-          setPassword('')
-          setConfirm('')
+          setPendingMsg(result.message || 'Your account is awaiting admin approval.')
         } else {
           toast('success', 'Account created')
         }
@@ -522,25 +530,97 @@ function LoginScreen({ onLogin, onRegister, toast }: { onLogin: (username: strin
 
   const registering = mode === 'register'
 
+  if (pendingMsg) {
+    return (
+      <main className="login-screen">
+        <div className="login-card">
+          <img src="/icons/icon-192.png" alt="" />
+          <h1>Request sent</h1>
+          <div className="pending-block">
+            <span className="pending-check">✓</span>
+            <p>{pendingMsg}</p>
+          </div>
+          <button
+            className="primary"
+            onClick={() => {
+              setPendingMsg('')
+              swap('signin')
+            }}
+          >
+            Back to sign in
+          </button>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="login-screen">
       <form className="login-card" onSubmit={submit}>
         <img src="/icons/icon-192.png" alt="" />
         <h1>LocalDrive</h1>
-        <p>{registering ? 'Create an account to request access to this drive.' : 'Sign in to browse shared drives on this network.'}</p>
-        {error && <div className="form-error">{error}</div>}
-        {notice && <div className="form-notice">{notice}</div>}
-        <label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label>
-        <label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={registering ? 'new-password' : 'current-password'} required /></label>
-        {registering && (
-          <label>Confirm password<input value={confirm} onChange={(event) => setConfirm(event.target.value)} type="password" autoComplete="new-password" required /></label>
-        )}
-        <button className="primary" disabled={loading}>{loading ? (registering ? 'Creating…' : 'Signing in…') : registering ? 'Create account' : 'Sign in'}</button>
         {canRegister && (
-          <button type="button" className="link-btn" onClick={() => swap(registering ? 'signin' : 'register')}>
-            {registering ? 'Back to sign in' : 'Create an account'}
-          </button>
+          <div className="auth-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!registering}
+              className={!registering ? 'active' : ''}
+              onClick={() => swap('signin')}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={registering}
+              className={registering ? 'active' : ''}
+              onClick={() => swap('register')}
+            >
+              Create account
+            </button>
+          </div>
         )}
+        <p className="login-sub">
+          {registering
+            ? 'Request an account — an admin will approve access.'
+            : 'Sign in to browse shared drives on this network.'}
+        </p>
+        {error && <div className="form-error">{error}</div>}
+        <label>
+          Username
+          <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required />
+        </label>
+        <label>
+          Password
+          <span className="pw-field">
+            <input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type={showPw ? 'text' : 'password'}
+              autoComplete={registering ? 'new-password' : 'current-password'}
+              required
+            />
+            <button type="button" className="pw-toggle" onClick={() => setShowPw((s) => !s)} tabIndex={-1}>
+              {showPw ? 'Hide' : 'Show'}
+            </button>
+          </span>
+        </label>
+        {registering && (
+          <label>
+            Confirm password
+            <input
+              value={confirm}
+              onChange={(event) => setConfirm(event.target.value)}
+              type={showPw ? 'text' : 'password'}
+              autoComplete="new-password"
+              required
+            />
+          </label>
+        )}
+        <button className="primary" disabled={loading}>
+          {loading ? (registering ? 'Creating…' : 'Signing in…') : registering ? 'Create account' : 'Sign in'}
+        </button>
       </form>
     </main>
   )
