@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto'
 import { getDb } from './db/index.js'
 import { loadConfig } from './config.js'
 import { sanitizeHomeName } from './util/fs-safe.js'
-import type { User, Role, Permission, Acl } from '../shared/types.js'
+import type { User, Role, Permission, Acl, UserStatus } from '../shared/types.js'
 
 /** Users, sessions (JWT), and per-folder RBAC. */
 
@@ -27,7 +27,8 @@ function rowToUser(r: any): User {
     username: r.username,
     role: r.role,
     createdAt: r.created_at,
-    home: r.home ?? ''
+    home: r.home ?? '',
+    status: (r.status ?? 'active') as UserStatus
   }
 }
 
@@ -48,14 +49,36 @@ export function ensureUniqueHome(base: string, excludeUserId?: number): string {
   return `${base}-${Date.now()}`
 }
 
-export function createUser(username: string, password: string, role: Role = 'user'): User {
+export function createUser(
+  username: string,
+  password: string,
+  role: Role = 'user',
+  status: UserStatus = 'active'
+): User {
   const db = getDb()
   const uname = username.trim()
   const home = role === 'admin' ? '' : ensureUniqueHome(sanitizeHomeName(uname))
   const info = db
-    .prepare('INSERT INTO users (username, password_hash, role, home) VALUES (?,?,?,?)')
-    .run(uname, hashPassword(password), role, home)
+    .prepare('INSERT INTO users (username, password_hash, role, home, status) VALUES (?,?,?,?,?)')
+    .run(uname, hashPassword(password), role, home, status)
   return getUserById(Number(info.lastInsertRowid))!
+}
+
+/** Self-registered account awaiting admin approval (no ACL/home dir until approved). */
+export function createPendingUser(username: string, password: string): User {
+  return createUser(username, password, 'user', 'pending')
+}
+
+export function listPendingUsers(): User[] {
+  return (
+    getDb().prepare("SELECT * FROM users WHERE status = 'pending' ORDER BY created_at").all() as any[]
+  ).map(rowToUser)
+}
+
+/** Flip a pending account to active. Provisioning (home dir/ACL) is done by the caller. */
+export function approveUser(id: number): User | null {
+  getDb().prepare("UPDATE users SET status = 'active' WHERE id = ?").run(id)
+  return getUserById(id)
 }
 
 export function getUserById(id: number): User | null {
@@ -64,7 +87,9 @@ export function getUserById(id: number): User | null {
 }
 
 export function getUserByName(username: string): User | null {
-  const r = getDb().prepare('SELECT * FROM users WHERE username = ?').get(username.trim())
+  const r = getDb()
+    .prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE')
+    .get(username.trim())
   return r ? rowToUser(r) : null
 }
 
@@ -89,7 +114,9 @@ export function setUserHome(id: number, home: string): void {
 }
 
 export function authenticate(username: string, password: string): User | null {
-  const r = getDb().prepare('SELECT * FROM users WHERE username = ?').get(username.trim()) as any
+  const r = getDb()
+    .prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE')
+    .get(username.trim()) as any
   if (!r) return null
   if (!verifyPassword(password, r.password_hash)) return null
   return rowToUser(r)

@@ -25,6 +25,10 @@ export interface AppConfig {
   httpsEnabled: boolean
   /** Port for the HTTPS listener when enabled. */
   httpsPort: number
+  /** Allow visitors to self-register an account from the web UI. */
+  registrationEnabled: boolean
+  /** When true, self-registered accounts become active immediately (no manual approval). */
+  autoApproveRegistrations: boolean
 }
 
 const DEFAULTS: Omit<AppConfig, 'jwtSecret'> = {
@@ -34,7 +38,9 @@ const DEFAULTS: Omit<AppConfig, 'jwtSecret'> = {
   shareRootName: 'LocalDrive',
   autoStart: true,
   httpsEnabled: false,
-  httpsPort: 4843
+  httpsPort: 4843,
+  registrationEnabled: true,
+  autoApproveRegistrations: false
 }
 
 export interface Paths {

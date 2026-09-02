@@ -60,7 +60,8 @@ export function buildWebdav(
       cb({ uid: 'anonymous', username: 'anonymous', isDefaultUser: true, isAdministrator: false }),
     getUserByNamePassword: (name: string, password: string, cb: (e: Error | null, u?: any) => void) => {
       const u = authenticate(name, password)
-      if (!u) return cb(new Error('Invalid credentials'))
+      // Pending (unapproved) accounts must not authenticate over WebDAV.
+      if (!u || u.status !== 'active') return cb(new Error('Invalid credentials'))
       cb(null, {
         uid: String(u.id),
         username: u.username,
@@ -164,7 +165,10 @@ export function buildWebdav(
       return anon()(req, res, next)
     }
     const owner = getUserByName(username)
-    if (!owner) return anon()(req, res, next) // unknown user: don't cache attacker-supplied names
+    // Unknown or not-yet-approved (pending) accounts get the mount-less anon
+    // handler: this both blocks them (401 for resource methods) and avoids
+    // caching a home-less server that would go stale once they're approved.
+    if (!owner || owner.status !== 'active') return anon()(req, res, next)
     let handler = cache.get(owner.username)
     if (!handler) {
       handler = buildServer(owner)

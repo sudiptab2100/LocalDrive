@@ -48,7 +48,7 @@ async function writeUsersManifest(uuid: string): Promise<void> {
     const appDir = await getDriveAppDir(uuid)
     if (!existsSync(appDir)) mkdirSync(appDir, { recursive: true })
     const users = listUsers()
-      .filter((u) => u.role !== 'admin')
+      .filter((u) => u.role !== 'admin' && u.status === 'active')
       .map((u) => ({ username: u.username, home: u.home, role: u.role, createdAt: u.createdAt }))
     const payload = JSON.stringify({ updatedAt: new Date().toISOString(), users }, null, 2)
     const tmp = join(appDir, `.users.${randomBytes(4).toString('hex')}.tmp`)
@@ -70,10 +70,10 @@ export async function provisionUserHome(user: User): Promise<void> {
   for (const uuid of uuids) await writeUsersManifest(uuid)
 }
 
-/** Provision every non-admin user's home on a newly-registered drive. */
+/** Provision every non-admin, active user's home on a newly-registered drive. */
 export async function provisionDriveForAllUsers(uuid: string): Promise<void> {
   for (const u of listUsers()) {
-    if (u.role === 'admin' || !u.home) continue
+    if (u.role === 'admin' || u.status !== 'active' || !u.home) continue
     setAcl(u.id, uuid, u.home, 'write')
     await ensureUserHomeDir(uuid, u.home)
   }
@@ -89,13 +89,13 @@ export async function backfillHomesAndProvision(): Promise<void> {
   const db = getDb()
 
   for (const u of listUsers()) {
-    if (u.role === 'admin' || u.home) continue
+    if (u.role === 'admin' || u.status !== 'active' || u.home) continue
     setUserHome(u.id, ensureUniqueHome(sanitizeHomeName(u.username), u.id))
   }
 
   const uuids = registeredDriveUuids()
   for (const u0 of listUsers()) {
-    if (u0.role === 'admin') continue
+    if (u0.role === 'admin' || u0.status !== 'active') continue
     const u = getUserById(u0.id)
     if (!u || !u.home) continue
     for (const uuid of uuids) {

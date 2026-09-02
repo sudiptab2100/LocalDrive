@@ -23,6 +23,7 @@ export const IPC = {
   usersList: 'users:list',
   userCreate: 'users:create',
   userDelete: 'users:delete',
+  userApprove: 'users:approve',
   userSetPassword: 'users:setPassword',
   userSetRole: 'users:setRole',
   aclSet: 'acl:set',
@@ -35,7 +36,8 @@ export const IPC = {
   openExternal: 'app:openExternal',
   // main -> renderer push events
   evtStatus: 'evt:status',
-  evtDrivesChanged: 'evt:drivesChanged'
+  evtDrivesChanged: 'evt:drivesChanged',
+  evtRegistrationsChanged: 'evt:registrationsChanged'
 } as const
 
 export interface UserWithAcls extends User {
@@ -63,6 +65,8 @@ export interface AppConfigView {
   shareRootName: string
   httpsEnabled: boolean
   httpsPort: number
+  registrationEnabled: boolean
+  autoApproveRegistrations: boolean
 }
 
 /** Surface exposed on `window.ld` in the renderer via the preload bridge. */
@@ -87,10 +91,12 @@ export interface LocalDriveApi {
     list(): Promise<UserWithAcls[]>
     create(username: string, password: string, role: Role): Promise<User>
     remove(id: number): Promise<void>
+    approve(id: number): Promise<User>
     setPassword(id: number, password: string): Promise<void>
     setRole(id: number, role: Role): Promise<void>
     setAcl(userId: number, drive: string, pathPrefix: string, permission: Permission): Promise<void>
     removeAcl(id: number): Promise<void>
+    onRegistrationsChanged(cb: (info: { pending: boolean; username: string }) => void): () => void
   }
   dashboard(): Promise<DashboardData>
   connect(): Promise<ConnectInfo>

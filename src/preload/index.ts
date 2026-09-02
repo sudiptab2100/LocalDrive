@@ -33,12 +33,18 @@ const api: LocalDriveApi = {
     create: (username: string, password: string, role: Role) =>
       ipcRenderer.invoke(IPC.userCreate, { username, password, role }),
     remove: (id: number) => ipcRenderer.invoke(IPC.userDelete, id),
+    approve: (id: number) => ipcRenderer.invoke(IPC.userApprove, id),
     setPassword: (id: number, password: string) =>
       ipcRenderer.invoke(IPC.userSetPassword, { id, password }),
     setRole: (id: number, role: Role) => ipcRenderer.invoke(IPC.userSetRole, { id, role }),
     setAcl: (userId: number, drive: string, pathPrefix: string, permission: Permission) =>
       ipcRenderer.invoke(IPC.aclSet, { userId, drive, pathPrefix, permission }),
-    removeAcl: (id: number) => ipcRenderer.invoke(IPC.aclRemove, id)
+    removeAcl: (id: number) => ipcRenderer.invoke(IPC.aclRemove, id),
+    onRegistrationsChanged: (cb) => {
+      const h = (_e: unknown, info: any): void => cb(info)
+      ipcRenderer.on(IPC.evtRegistrationsChanged, h)
+      return () => ipcRenderer.removeListener(IPC.evtRegistrationsChanged, h)
+    }
   },
   dashboard: () => ipcRenderer.invoke(IPC.dashboard),
   connect: () => ipcRenderer.invoke(IPC.connectInfo),

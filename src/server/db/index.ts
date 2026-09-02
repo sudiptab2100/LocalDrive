@@ -106,6 +106,18 @@ export function getDb(): DB {
   if (!userCols.some((c) => c.name === 'home')) {
     db.exec("ALTER TABLE users ADD COLUMN home TEXT NOT NULL DEFAULT ''")
   }
+  // v3: self-registration approval status ('active' | 'pending').
+  if (!userCols.some((c) => c.name === 'status')) {
+    db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+  }
+  // v3: case-insensitive username uniqueness + lookups (non-destructive index).
+  try {
+    db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE)'
+    )
+  } catch {
+    /* pre-existing case-duplicate usernames: keep startup resilient */
+  }
 
   const version = (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as
     | { value: string }

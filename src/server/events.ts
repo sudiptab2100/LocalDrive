@@ -4,5 +4,6 @@ import { EventEmitter } from 'events'
 export const bus = new EventEmitter()
 
 export const EVENTS = {
-  drivesChanged: 'drives-changed'
+  drivesChanged: 'drives-changed',
+  registrationsChanged: 'registrations-changed'
 } as const

@@ -601,3 +601,31 @@ code {
 .cert-help li {
   line-height: 1.5;
 }
+
+/* Registration: nav-tab count badge + pending approvals */
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.tab .badge,
+.panel-head h2 .badge,
+.card h3 .badge {
+  background: var(--danger);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  margin-left: var(--s2);
+}
+.tag.warn {
+  color: #f5c451;
+  border-color: #6b511d;
+  background: rgba(245, 196, 81, 0.08);
+}
+.pending-row {
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--line);
+}
+.pending-row:first-of-type {
+  border-top: none;
+}

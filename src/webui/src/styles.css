@@ -186,6 +186,9 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
 .login-card p { color: var(--muted); }
 .login-card label { display: grid; gap: var(--s2); color: var(--muted); }
 .form-error { padding: var(--s3); border-radius: var(--r-md); background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.form-notice { padding: var(--s3); border-radius: var(--r-md); background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.link-btn { background: none; border: none; color: var(--primary); cursor: pointer; padding: var(--s2); font: inherit; justify-self: center; }
+.link-btn:hover { text-decoration: underline; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: var(--s4); background: rgba(2, 6, 12, 0.72); backdrop-filter: blur(12px); }
 .upload-modal { width: min(760px, 100%); padding: var(--s4); position: relative; display: grid; gap: var(--s4); }

@@ -2,6 +2,8 @@
 
 export type Role = 'admin' | 'user'
 export type Permission = 'read' | 'write' | 'admin'
+/** Account lifecycle: 'pending' accounts await admin approval and cannot sign in. */
+export type UserStatus = 'active' | 'pending'
 
 export interface User {
   id: number
@@ -10,6 +12,8 @@ export interface User {
   createdAt: string
   /** Filesystem-safe folder name for this user's private home ('' for admins). */
   home: string
+  /** 'pending' until an admin approves a self-registered account. */
+  status: UserStatus
 }
 
 export interface DriveInfo {
@@ -92,6 +96,14 @@ export interface ActivityRecord {
 export interface AuthResult {
   token: string
   user: User
+}
+
+/** Response to self-registration: either auto-approved (pending:false) or awaiting admin approval. */
+export interface RegisterResult {
+  pending: boolean
+  token?: string
+  user?: User
+  message?: string
 }
 
 export interface ApiError {

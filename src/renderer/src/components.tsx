@@ -235,6 +235,7 @@ function Stat({ label, value }: { label: string; value: string }): JSX.Element {
 // ------------------------------------------------------------------ Users --
 export function UsersPanel(): JSX.Element {
   const [users, setUsers] = useState<UserWithAcls[]>([])
+  const [cfg, setCfg] = useState<AppConfigView | null>(null)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<Role>('user')
@@ -243,7 +244,13 @@ export function UsersPanel(): JSX.Element {
   const load = async (): Promise<void> => setUsers(await ld().users.list())
   useEffect(() => {
     load()
+    ld().config.get().then(setCfg)
+    const off = ld().users.onRegistrationsChanged(() => load())
+    return off
   }, [])
+
+  const pending = users.filter((u) => u.status === 'pending')
+  const active = users.filter((u) => u.status !== 'pending')
 
   const create = async (): Promise<void> => {
     setError('')
@@ -259,15 +266,88 @@ export function UsersPanel(): JSX.Element {
     }
   }
 
+  const toggle = async (patch: Partial<AppConfigView>): Promise<void> => {
+    if (!cfg) return
+    setCfg({ ...cfg, ...patch })
+    setCfg(await ld().config.set(patch))
+  }
+
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2>Users</h2>
+        <h2>
+          Users
+          {pending.length > 0 && <span className="badge">{pending.length}</span>}
+        </h2>
         <p className="muted">
           Create accounts. Each user automatically gets a private folder named after them on every
           shared drive, and can only see inside their own folder. Admins can access everything.
         </p>
       </div>
+
+      {pending.length > 0 && (
+        <div className="card">
+          <h3>
+            Pending approvals <span className="badge">{pending.length}</span>
+          </h3>
+          <p className="small muted">
+            These people registered from the web sign-in page and cannot log in until you approve
+            them.
+          </p>
+          {pending.map((u) => (
+            <div className="row-between pending-row" key={u.id}>
+              <div className="row-main">
+                <strong>{u.username}</strong> <span className="tag warn">awaiting approval</span>
+              </div>
+              <div className="row-gap">
+                <button
+                  className="btn primary"
+                  onClick={async () => {
+                    await ld().users.approve(u.id)
+                    load()
+                  }}
+                >
+                  Approve
+                </button>
+                <button
+                  className="btn danger"
+                  onClick={async () => {
+                    if (confirm(`Reject and delete ${u.username}'s request?`)) {
+                      await ld().users.remove(u.id)
+                      load()
+                    }
+                  }}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {cfg && (
+        <div className="card">
+          <h3>Registration</h3>
+          <label className="field-row">
+            <input
+              type="checkbox"
+              checked={cfg.registrationEnabled}
+              onChange={(e) => toggle({ registrationEnabled: e.target.checked })}
+            />
+            <span>Allow new people to register an account from the web sign-in page</span>
+          </label>
+          <label className="field-row">
+            <input
+              type="checkbox"
+              checked={cfg.autoApproveRegistrations}
+              disabled={!cfg.registrationEnabled}
+              onChange={(e) => toggle({ autoApproveRegistrations: e.target.checked })}
+            />
+            <span>Auto-approve new registrations (they can sign in immediately — no approval)</span>
+          </label>
+        </div>
+      )}
 
       <div className="card">
         <h3>Add user</h3>
@@ -290,7 +370,7 @@ export function UsersPanel(): JSX.Element {
         {error && <div className="error">{error}</div>}
       </div>
 
-      {users.map((u) => (
+      {active.map((u) => (
         <UserRow key={u.id} user={u} onChange={load} />
       ))}
     </div>

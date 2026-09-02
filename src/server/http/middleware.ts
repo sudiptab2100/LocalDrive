@@ -15,7 +15,7 @@ declare global {
 }
 
 /** Resolve the user from a Bearer token, session cookie, or Basic auth. */
-export function resolveUser(req: Request): User | null {
+export function resolveUserRaw(req: Request): User | null {
   const auth = req.headers.authorization
   if (auth?.startsWith('Bearer ')) {
     const u = verifyToken(auth.slice(7))
@@ -36,6 +36,16 @@ export function resolveUser(req: Request): User | null {
     if (u) return u
   }
   return null
+}
+
+/**
+ * Resolve the request's user, treating non-active (pending) accounts as
+ * unauthenticated. This single choke point blocks web sessions, bearer tokens,
+ * and WebDAV Basic auth for accounts still awaiting admin approval.
+ */
+export function resolveUser(req: Request): User | null {
+  const u = resolveUserRaw(req)
+  return u && u.status === 'active' ? u : null
 }
 
 export function attachUser(req: Request, _res: Response, next: NextFunction): void {

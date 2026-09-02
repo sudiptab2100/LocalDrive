@@ -1,4 +1,4 @@
-import type { AuthResult, DriveInfo, FileEntry, ServerStatus, TransferStat, ActivityRecord, User } from '@shared/types'
+import type { AuthResult, DriveInfo, FileEntry, ServerStatus, TransferStat, ActivityRecord, User, RegisterResult } from '@shared/types'
 
 export interface ListResponse {
   path: string
@@ -76,6 +76,12 @@ function params(values: Record<string, string | number | undefined | null>): str
 export const api = {
   login(username: string, password: string) {
     return request<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+  },
+  register(username: string, password: string) {
+    return request<RegisterResult>('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, password }) })
+  },
+  authConfig() {
+    return request<{ registrationEnabled: boolean }>('/api/auth/config')
   },
   logout() {
     return request<{ ok?: true }>('/api/auth/logout', { method: 'POST' })

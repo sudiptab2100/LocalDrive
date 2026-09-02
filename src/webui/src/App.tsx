@@ -1,7 +1,7 @@
 import { Dashboard, ProgressBar } from '@uppy/react'
 import Uppy from '@uppy/core'
 import Tus from '@uppy/tus'
-import type { DriveInfo, FileEntry, User } from '@shared/types'
+import type { DriveInfo, FileEntry, User, RegisterResult } from '@shared/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiRequestError, api, fileUrl, zipUrl, type SearchHit } from './api'
 import { formatBytes, formatDate, iconFor, isTextLike, joinPath, parentPath } from './utils'
@@ -172,6 +172,16 @@ export function App() {
     await refreshDrives()
   }
 
+  const onRegister = async (username: string, password: string): Promise<RegisterResult> => {
+    const result = await api.register(username, password)
+    // Auto-approved registrations sign the user in immediately (cookie already set).
+    if (!result.pending && result.user) {
+      setUser(result.user)
+      await refreshDrives()
+    }
+    return result
+  }
+
   const logout = async () => {
     try {
       await api.logout()
@@ -245,7 +255,7 @@ export function App() {
   }
 
   if (!authChecked) return <Splash />
-  if (!user) return <LoginScreen onLogin={onLogin} toast={toast} />
+  if (!user) return <LoginScreen onLogin={onLogin} onRegister={onRegister} toast={toast} />
 
   // Non-admins are confined to their own home, which the server presents as the
   // root "/". Hide drive internals (name, capacity) and show it simply as "Home".
@@ -453,37 +463,84 @@ function Splash() {
   return <div className="splash"><img src="/icons/icon-192.png" alt="" /><p>Opening LocalDrive…</p></div>
 }
 
-function LoginScreen({ onLogin, toast }: { onLogin: (username: string, password: string) => Promise<void>; toast: (kind: Toast['kind'], message: string) => void }) {
+function LoginScreen({ onLogin, onRegister, toast }: { onLogin: (username: string, password: string) => Promise<void>; onRegister: (username: string, password: string) => Promise<RegisterResult>; toast: (kind: Toast['kind'], message: string) => void }) {
+  const [mode, setMode] = useState<'signin' | 'register'>('signin')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [canRegister, setCanRegister] = useState(false)
+
+  useEffect(() => {
+    api
+      .authConfig()
+      .then((c) => setCanRegister(c.registrationEnabled))
+      .catch(() => setCanRegister(false))
+  }, [])
+
+  const swap = (next: 'signin' | 'register') => {
+    setMode(next)
+    setError('')
+    setNotice('')
+    setPassword('')
+    setConfirm('')
+  }
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    setLoading(true)
     setError('')
+    setNotice('')
+    if (mode === 'register' && password !== confirm) {
+      setError('Passwords do not match')
+      return
+    }
+    setLoading(true)
     try {
-      await onLogin(username.trim(), password)
-      toast('success', 'Signed in')
+      if (mode === 'signin') {
+        await onLogin(username.trim(), password)
+        toast('success', 'Signed in')
+      } else {
+        const result = await onRegister(username.trim(), password)
+        if (result.pending) {
+          setNotice(result.message || 'Your account is awaiting admin approval.')
+          setMode('signin')
+          setPassword('')
+          setConfirm('')
+        } else {
+          toast('success', 'Account created')
+        }
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Login failed'
+      const message = err instanceof Error ? err.message : mode === 'signin' ? 'Login failed' : 'Registration failed'
       setError(message)
     } finally {
       setLoading(false)
     }
   }
 
+  const registering = mode === 'register'
+
   return (
     <main className="login-screen">
       <form className="login-card" onSubmit={submit}>
         <img src="/icons/icon-192.png" alt="" />
         <h1>LocalDrive</h1>
-        <p>Sign in to browse shared drives on this network.</p>
+        <p>{registering ? 'Create an account to request access to this drive.' : 'Sign in to browse shared drives on this network.'}</p>
         {error && <div className="form-error">{error}</div>}
+        {notice && <div className="form-notice">{notice}</div>}
         <label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label>
-        <label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required /></label>
-        <button className="primary" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+        <label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={registering ? 'new-password' : 'current-password'} required /></label>
+        {registering && (
+          <label>Confirm password<input value={confirm} onChange={(event) => setConfirm(event.target.value)} type="password" autoComplete="new-password" required /></label>
+        )}
+        <button className="primary" disabled={loading}>{loading ? (registering ? 'Creating…' : 'Signing in…') : registering ? 'Create account' : 'Sign in'}</button>
+        {canRegister && (
+          <button type="button" className="link-btn" onClick={() => swap(registering ? 'signin' : 'register')}>
+            {registering ? 'Back to sign in' : 'Create an account'}
+          </button>
+        )}
       </form>
     </main>
   )

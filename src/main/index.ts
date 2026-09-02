@@ -12,6 +12,8 @@ import {
   listAcls,
   createUser,
   deleteUser,
+  approveUser,
+  getUserById,
   setUserPassword,
   setUserRole,
   setAcl,
@@ -256,7 +258,22 @@ function registerIpc(): void {
     await provisionUserHome(user)
     return user
   })
-  ipcMain.handle(IPC.userDelete, (_e, id: number) => deleteUser(id))
+  ipcMain.handle(IPC.userDelete, (_e, id: number) => {
+    const target = getUserById(id)
+    deleteUser(id)
+    // Rejecting a pending request should refresh the admin's approvals view.
+    if (target?.status === 'pending') {
+      bus.emit(EVENTS.registrationsChanged, { pending: false, username: target.username })
+    }
+  })
+  ipcMain.handle(IPC.userApprove, async (_e, id: number) => {
+    const user = approveUser(id)
+    if (user) {
+      await provisionUserHome(user)
+      bus.emit(EVENTS.registrationsChanged, { pending: false, username: user.username })
+    }
+    return user
+  })
   ipcMain.handle(IPC.userSetPassword, (_e, p: { id: number; password: string }) =>
     setUserPassword(p.id, p.password)
   )
@@ -283,7 +300,9 @@ function registerIpc(): void {
       autoStart: c.autoStart,
       shareRootName: c.shareRootName,
       httpsEnabled: c.httpsEnabled,
-      httpsPort: c.httpsPort
+      httpsPort: c.httpsPort,
+      registrationEnabled: c.registrationEnabled,
+      autoApproveRegistrations: c.autoApproveRegistrations
     }
   })
   ipcMain.handle(IPC.configSet, (_e, patch: Record<string, unknown>) => {
@@ -296,7 +315,9 @@ function registerIpc(): void {
       autoStart: next.autoStart,
       shareRootName: next.shareRootName,
       httpsEnabled: next.httpsEnabled,
-      httpsPort: next.httpsPort
+      httpsPort: next.httpsPort,
+      registrationEnabled: next.registrationEnabled,
+      autoApproveRegistrations: next.autoApproveRegistrations
     }
   })
 
@@ -332,6 +353,12 @@ if (!singleLock) {
     }
 
     bus.on(EVENTS.drivesChanged, () => mainWindow?.webContents.send(IPC.evtDrivesChanged))
+    bus.on(EVENTS.registrationsChanged, (info: { pending: boolean; username: string }) => {
+      mainWindow?.webContents.send(IPC.evtRegistrationsChanged, info)
+      if (info?.pending) {
+        notify('New account request', `${info.username} is waiting for your approval`)
+      }
+    })
 
     // First-run admin credentials + optional auto-start. Guarded so a failure
     // here is recorded and surfaced rather than silently aborting startup.
