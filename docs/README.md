@@ -10,21 +10,21 @@ operational playbooks needed to make correct, safe changes.
 
 ## What LocalDrive is (one paragraph)
 A native macOS (Electron) app that turns an external drive or folder into a private
-Wi‑Fi/LAN network drive. It embeds an Express HTTP + WebDAV server, a browser PWA,
-per‑user private home folders with role/permission-based access control, resumable
-uploads, search, thumbnails, optional self‑signed HTTPS, and self‑registration with
-admin approval. The server can stop/crash/restart with no data loss, and drives can
-be hot‑added.
+Wi‑Fi/LAN network drive. It embeds an Express HTTP + WebDAV server, a browser PWA, a
+browser admin control panel, per‑user private home folders with role/permission-based
+access control, resumable uploads, search, thumbnails, optional self‑signed HTTPS, and
+self‑registration with admin approval. The server can also run headless, can
+stop/crash/restart with no data loss, and drives can be hot‑added.
 
 ## Reading order
-1. [architecture.md](architecture.md) — the four runtime surfaces, the embedded
-   server, data flow, and the no‑data‑loss lifecycle.
+1. [architecture.md](architecture.md) — the runtime surfaces, `/admin`, headless mode,
+   the embedded server, data flow, and the no‑data‑loss lifecycle.
 2. [project-structure.md](project-structure.md) — what every file/module does.
 3. [data-model.md](data-model.md) — SQLite schema, config, and on‑disk layout.
 4. [security-rbac.md](security-rbac.md) — auth, ACLs, per‑user confinement, HTTPS.
 5. [http-api.md](http-api.md) — REST + WebDAV endpoint reference.
 6. [ipc-api.md](ipc-api.md) — Electron main ↔ renderer IPC contract (`window.ld`).
-7. [frontend.md](frontend.md) — the web PWA and the desktop control center.
+7. [frontend.md](frontend.md) — the web PWA and shared desktop/admin control center.
 8. [build-deploy.md](build-deploy.md) — scripts, packaging, and the install/deploy playbook.
 9. [features.md](features.md) — feature catalog and implemented‑vs‑roadmap status.
 10. [conventions.md](conventions.md) — coding conventions, safety patterns, gotchas.
@@ -35,10 +35,11 @@ be hot‑added.
 | --- | --- |
 | Platform | macOS, Apple Silicon (arm64) |
 | Language | TypeScript (strict, ESM) |
-| UI | React 18 (desktop renderer + web PWA) |
+| UI | React 18 (shared desktop/admin renderer + web PWA) |
 | Default HTTP port | `4820` |
 | Default HTTPS port | `4843` (opt‑in) |
 | Health check | `GET /api/health` → `{ ok: true, status }` |
+| Admin panel | `http://<host>:4820/admin` (admin-only) |
 | WebDAV mount | `http://<host>:4820/dav/<DriveName>/` |
 | Config + DB dir | `~/Library/Application Support/LocalDrive/` |
 | On‑drive share root | `<mount>/LocalDrive/` (per‑user: `LocalDrive/<home>/`) |

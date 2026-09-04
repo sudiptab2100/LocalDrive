@@ -1,6 +1,6 @@
 # Architecture
 
-LocalDrive is one Electron app made of four runtime surfaces plus an embedded
+LocalDrive is one Electron app made of five runtime surfaces plus an embedded
 server. The server runs **inside the Electron main process**, so "start the app"
 and "start the server" are the same process (the server can also run standalone
 for development).
@@ -21,18 +21,19 @@ for development).
 │  Embedded server (src/server, same Node process)                                        │
 │   Express app  ─ /api/*  REST                                                            │
 │                ─ /dav/*  WebDAV (webdav-server)                                          │
-│                ─ static  the web PWA (out/webui)                                         │
+│                ─ static  /admin (out/admin) + web PWA (out/webui)                         │
 │   better-sqlite3 (WAL)  ·  tus uploads  ·  sharp thumbs  ·  bonjour mDNS  ·  node‑forge │
 └────────────────────────────────────────────────────────────────────────────────────────┘
                          ▲ HTTP/HTTPS + WebDAV over the LAN
                          │
-   Browsers (the PWA, src/webui)   +   WebDAV clients (Finder / Explorer / Android)
+      Browsers (the PWA, src/webui) + Admin panel (/admin) + WebDAV clients
 ```
 
 1. **Main process** (`src/main/index.ts`) — Node. Owns the tray, the control‑center
    window, app lifecycle (single‑instance lock, stay‑in‑tray on close, graceful quit),
    the `/Volumes` watcher for drive hot‑plug, all `ipcMain` handlers, and the
-   `ServerManager` instance.
+   `ServerManager` instance. In headless mode it hosts the server without creating the
+   window, tray, or IPC bridge.
 2. **Preload** (`src/preload/index.ts`) — a `contextBridge` that exposes a typed
    `window.ld` API to the renderer. It is the **only** bridge between renderer and main.
 3. **Renderer** (`src/renderer`) — the desktop control center (React). Admin‑facing:
@@ -41,6 +42,10 @@ for development).
 4. **Web PWA** (`src/webui`) — the client app served to browsers on the LAN. End‑user
    file manager: browse/upload/download/preview/search within the caller's scope. Talks
    to the server over `/api/*` with a cookie session.
+5. **Admin control panel** (`src/admin`) — browser SPA served at `/admin`. It reuses the
+   exact desktop renderer components by installing an HTTP-backed `LocalDriveApi` as
+   `window.ld`; desktop and web admin share one component codebase. It is admin-only and
+   has full parity with the desktop control center, including lifecycle and settings.
 
 The **embedded server** (`src/server`) is shared by all of the above. `getDashboard`,
 drive registry, auth, and config are called both by HTTP routes and directly by IPC
@@ -59,9 +64,12 @@ handlers in the main process (no HTTP hop for the desktop UI).
 4. `express.json({ limit: '5mb' })` — for the REST routes below.
 5. Unauthenticated utility routes: `GET /api/health`, `GET /api/cert`.
 6. Feature routers: `/api/auth`, `/api/drives`, `/api/files`, `/api/search`, `/api/stats`,
-   `/api/users`; plus `GET /api/connect` (auth’d, QR + URLs).
-7. Static PWA (`out/webui`) with an `index.html` SPA fallback that excludes `/api` and `/dav`.
-8. JSON error handler.
+   `/api/users`, `/api/server`, `/api/config`, `/api/access`, `/api/events`; plus
+   `GET /api/connect` (auth’d, QR + URLs).
+7. Static admin panel (`out/admin`) mounted at `/admin` with an SPA fallback that excludes
+   `/api` and `/dav`; this is mounted before the client PWA catch-all.
+8. Static PWA (`out/webui`) with an `index.html` SPA fallback that excludes `/api` and `/dav`.
+9. JSON error handler.
 
 See [http-api.md](http-api.md) for the full endpoint reference.
 
@@ -89,10 +97,19 @@ what makes stop/restart lossless.
 runs once).
 
 `ServerManager` also listens on the app event bus: when `drivesChanged` fires it rebuilds
-the WebDAV mounts on the fly (no restart needed to add/remove a drive).
+the WebDAV mounts on the fly (no restart needed to add/remove a drive). While running,
+it polls `lanAddresses()`; if the LAN IP set changes, shared `computeUrls()` refreshes
+`status.urls` and `statusChanged` is emitted so the terminal banner and web admin panel
+update without a restart. `getServerManager({ adminDir })` also threads the admin panel
+static directory into the HTTP app.
 
 ## Event bus (`src/server/events.ts`)
 A tiny `EventEmitter` (`bus`) with these events:
+- `statusChanged` → emitted by `ServerManager` after meaningful start/stop transitions
+  and after the address watch recomputes URLs. Main forwards it to the renderer; `/admin`
+  receives it over SSE.
+- `configChanged` → emitted after config saves; headless/standalone banners reprint and
+  `/admin` receives it over SSE.
 - `drivesChanged` → ServerManager rebuilds WebDAV; main forwards to the renderer
   (`evt:drivesChanged`) to refresh the Drives tab.
 - `registrationsChanged` → main forwards to the renderer (`evt:registrationsChanged`),
@@ -104,9 +121,28 @@ A tiny `EventEmitter` (`bus`) with these events:
 
 ## Standalone server mode (`src/server/standalone.ts`)
 `npm run server:dev` runs the server with **no Electron** (via `tsx watch`). It bootstraps
-the admin, starts the manager, prints URLs/credentials, and installs SIGINT/SIGTERM
-graceful shutdown. Honors `LOCALDRIVE_HOME` (isolated config/data — used for tests) and
-`LOCALDRIVE_WEBUI` (serve a prebuilt PWA). This is the fastest loop for server‑only work.
+the admin, starts the manager, serves the web PWA and `/admin`, prints the shared
+connection banner, reprints it on `statusChanged`/`configChanged`, and installs
+SIGINT/SIGTERM graceful shutdown. Honors `LOCALDRIVE_HOME` (isolated config/data — used
+for tests), `LOCALDRIVE_WEBUI`, and `LOCALDRIVE_ADMIN` (prebuilt static dirs). This is the
+fastest loop for server‑only work; packaged headless uses Electron so native modules match
+the shipped app.
+
+## Headless mode (`src/main/index.ts`)
+The packaged app can run without a window or tray via:
+
+```bash
+/Applications/LocalDrive.app/Contents/MacOS/LocalDrive --headless
+```
+
+`--headless` or `LOCALDRIVE_HEADLESS=1` skips the BrowserWindow, tray, and IPC
+registration, hides the Dock icon when possible, and runs the same `ServerManager` serving
+the web UI plus `/admin`. It prints `formatConnectionBanner(...)` with status, bind host,
+ports, share name, config dir, active connections, client URLs, admin panel URLs, and
+first-run admin credentials when created; the banner reprints live on `statusChanged` and
+`configChanged`. When attached to a TTY, `r` restarts and `q`/Ctrl-C quits. SIGINT/SIGTERM
+shut down gracefully. Use `--reset-admin` or `LOCALDRIVE_ADMIN_PASSWORD` on headless start
+to reset and print admin credentials if the password is lost.
 
 ## Data flow examples
 - **Browser lists a folder:** PWA `api.list()` → `GET /api/files/list?drive&path&hidden`

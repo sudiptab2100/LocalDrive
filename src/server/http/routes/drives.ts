@@ -1,5 +1,6 @@
 import { Router } from 'express'
-import { syncDrives, registerDrive, unregisterDrive } from '../../drives/registry.js'
+import { isAbsolute } from 'path'
+import { syncDrives, registerDrive, registerFolder, unregisterDrive } from '../../drives/registry.js'
 import { requireAuth, requireAdmin } from '../middleware.js'
 import { getUserHome } from '../../auth.js'
 import { getAccessMap, requestAccess } from '../../access.js'
@@ -85,4 +86,26 @@ drivesRouter.post('/unregister', requireAdmin, (req, res) => {
   unregisterDrive(String(uuid))
   logActivity('drive_unregister', { userId: req.user!.id, detail: String(uuid) })
   res.json({ ok: true })
+})
+
+// Register any absolute folder path on the server as a shared drive. The web
+// panel uses this (browsers have no native folder picker) with a typed path;
+// the desktop app uses a native dialog. Admin-only.
+drivesRouter.post('/register-folder', requireAdmin, async (req, res) => {
+  const path = String(req.body?.path ?? '').trim()
+  if (!path) {
+    res.status(400).json({ error: 'Missing path' })
+    return
+  }
+  if (!isAbsolute(path)) {
+    res.status(400).json({ error: 'Path must be absolute' })
+    return
+  }
+  try {
+    const drive = await registerFolder(path)
+    logActivity('drive_register', { userId: req.user!.id, detail: drive.label })
+    res.json({ drive })
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message })
+  }
 })

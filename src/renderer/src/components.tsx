@@ -32,6 +32,8 @@ export function DrivesPanel({
   onChange: () => void
 }): JSX.Element {
   const [busy, setBusy] = useState<string | null>(null)
+  const isWeb = ld().platform === 'web'
+  const [showAddFolder, setShowAddFolder] = useState(false)
   const [showUnshareable, setShowUnshareable] = useState<boolean>(
     () => localStorage.getItem('ld.showUnshareable') === '1'
   )
@@ -79,7 +81,9 @@ export function DrivesPanel({
           <button
             className="btn primary"
             disabled={busy === '__add__'}
-            onClick={() => act(() => ld().drives.addFolder(), '__add__')}
+            onClick={() =>
+              isWeb ? setShowAddFolder(true) : act(() => ld().drives.addFolder(), '__add__')
+            }
           >
             + Share a folder…
           </button>
@@ -162,14 +166,93 @@ export function DrivesPanel({
                   Share this drive
                 </button>
               )}
-              <button className="btn" disabled={!d.online} onClick={() => ld().drives.reveal(d.uuid)}>
-                Reveal
-              </button>
+              {!isWeb && (
+                <button className="btn" disabled={!d.online} onClick={() => ld().drives.reveal(d.uuid)}>
+                  Reveal
+                </button>
+              )}
             </div>
           </div>
         ))}
       </div>
+      {showAddFolder && (
+        <AddFolderModal onClose={() => setShowAddFolder(false)} onAdded={onChange} />
+      )}
     </div>
+  )
+}
+
+/**
+ * Web-only dialog to share a folder by typing an absolute server path. Browsers
+ * have no native folder picker, so the admin panel collects the path here and
+ * calls `drives.addFolder(path)` (the desktop app uses a native dialog instead).
+ */
+function AddFolderModal({
+  onClose,
+  onAdded
+}: {
+  onClose: () => void
+  onAdded: () => void
+}): JSX.Element {
+  const toast = useToast()
+  const [path, setPath] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (): Promise<void> => {
+    setError('')
+    const p = path.trim()
+    if (!p) return setError('Enter an absolute folder path')
+    if (!p.startsWith('/')) return setError('Path must be absolute (start with “/”)')
+    setBusy(true)
+    try {
+      await ld().drives.addFolder(p)
+      toast('success', 'Folder shared')
+      onAdded()
+      onClose()
+    } catch (e) {
+      setError((e as Error).message || 'Could not share that folder')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      title="Share a folder"
+      onClose={onClose}
+      width={480}
+      footer={
+        <>
+          <button className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={submit} disabled={busy}>
+            Share folder
+          </button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <label className="fld">
+          <span className="fld-label">Absolute folder path on the server</span>
+          <input
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
+            placeholder="/Volumes/My Drive/Shared"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </label>
+        <p className="muted small">
+          The path must exist on the machine running LocalDrive. A folder is created and shared as a
+          new drive.
+        </p>
+        {error && <div className="error">{error}</div>}
+      </div>
+    </Modal>
   )
 }
 
@@ -890,6 +973,7 @@ export function ConnectPanel(): JSX.Element {
 export function SettingsPanel(): JSX.Element {
   const [cfg, setCfg] = useState<AppConfigView | null>(null)
   const [saved, setSaved] = useState(false)
+  const isWeb = ld().platform === 'web'
 
   useEffect(() => {
     ld().config.get().then(setCfg)
@@ -965,13 +1049,17 @@ export function SettingsPanel(): JSX.Element {
             <div className="btn-row">
               <button
                 className="btn small"
-                onClick={() => ld().openExternal(`http://localhost:${cfg.port}/api/cert`)}
+                onClick={() =>
+                  ld().openExternal(isWeb ? '/api/cert' : `http://localhost:${cfg.port}/api/cert`)
+                }
               >
                 Download certificate
               </button>
-              <button className="btn small" onClick={() => ld().revealCert()}>
-                Reveal certificate file
-              </button>
+              {!isWeb && (
+                <button className="btn small" onClick={() => ld().revealCert()}>
+                  Reveal certificate file
+                </button>
+              )}
             </div>
             <details className="cert-help small muted">
               <summary>How to install the certificate on a device</summary>

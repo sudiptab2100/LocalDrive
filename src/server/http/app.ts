@@ -9,6 +9,10 @@ import { uploadRouter } from './routes/uploads.js'
 import { searchRouter } from './routes/search.js'
 import { statsRouter } from './routes/stats.js'
 import { usersRouter } from './routes/users.js'
+import { accessRouter } from './routes/access.js'
+import { configRouter } from './routes/config.js'
+import { serverRouter } from './routes/server.js'
+import { eventsRouter } from './routes/events.js'
 import { getStatus } from '../status.js'
 import { getCaCertPem } from '../tls.js'
 import { qrDataUrl } from '../discovery.js'
@@ -22,6 +26,8 @@ export function setWebdavHandler(h: RequestHandler | null): void {
 
 export interface AppOptions {
   webuiDir?: string
+  /** Directory of the built admin control panel, served under `/admin`. */
+  adminDir?: string
 }
 
 export function createApp(opts: AppOptions = {}): Express {
@@ -68,6 +74,10 @@ export function createApp(opts: AppOptions = {}): Express {
   app.use('/api/search', searchRouter)
   app.use('/api/stats', statsRouter)
   app.use('/api/users', usersRouter)
+  app.use('/api/access', accessRouter)
+  app.use('/api/config', configRouter)
+  app.use('/api/server', serverRouter)
+  app.use('/api/events', eventsRouter)
 
   // Connection info + QR code for easy device onboarding.
   app.get('/api/connect', requireAuth, async (_req, res) => {
@@ -75,6 +85,19 @@ export function createApp(opts: AppOptions = {}): Express {
     const primary = pickQrUrl(status.urls, status.port)
     res.json({ urls: status.urls, hostname: status.hostname, qr: await qrDataUrl(primary) })
   })
+
+  // Serve the admin control panel (mounted before the webui catch-all so its
+  // deep links resolve to the admin bundle, not the client PWA).
+  const adminDir = opts.adminDir
+  if (adminDir && existsSync(adminDir)) {
+    app.use('/admin', express.static(adminDir))
+    app.get('/admin/*', (req, res, next) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/dav')) return next()
+      const index = join(adminDir, 'index.html')
+      if (existsSync(index)) return res.sendFile(index)
+      next()
+    })
+  }
 
   // Serve the client PWA and fall back to index.html for client-side routing.
   const webuiDir = opts.webuiDir

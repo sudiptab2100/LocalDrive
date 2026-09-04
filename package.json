@@ -8,8 +8,9 @@
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "npm run build:webui && electron-vite build",
+    "build": "npm run build:webui && npm run build:admin && electron-vite build",
     "build:webui": "vite build --config vite.webui.config.ts",
+    "build:admin": "vite build --config vite.admin.config.ts",
     "server:dev": "tsx watch src/server/standalone.ts",
     "server:start": "tsx src/server/standalone.ts",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
@@ -41,6 +42,10 @@
       {
         "from": "out/webui",
         "to": "webui"
+      },
+      {
+        "from": "out/admin",
+        "to": "admin"
       },
       {
         "from": "build",

@@ -2,6 +2,7 @@ import { homedir, hostname } from 'os'
 import { join } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs'
 import { randomBytes } from 'crypto'
+import type { AppConfigView } from '../shared/ipc.js'
 
 /**
  * Central application configuration and paths. Everything the app needs to
@@ -99,6 +100,21 @@ export function saveConfig(config: AppConfig, paths = getPaths()): void {
   writeFileSync(tmp, JSON.stringify(config, null, 2), 'utf8')
   // Atomic replace to avoid a half-written config on crash.
   renameSync(tmp, paths.configFile)
+}
+
+/** Project the full config down to the client-safe view (secrets omitted). */
+export function toConfigView(c: AppConfig): AppConfigView {
+  return {
+    port: c.port,
+    host: c.host,
+    autoStart: c.autoStart,
+    shareRootName: c.shareRootName,
+    httpsEnabled: c.httpsEnabled,
+    httpsPort: c.httpsPort,
+    registrationEnabled: c.registrationEnabled,
+    autoApproveRegistrations: c.autoApproveRegistrations,
+    autoApproveAccessRequests: c.autoApproveAccessRequests
+  }
 }
 
 export function localHostname(): string {

@@ -19,7 +19,9 @@ const api: LocalDriveApi = {
   drives: {
     listAll: () => ipcRenderer.invoke(IPC.drivesListAll),
     register: (uuid: string) => ipcRenderer.invoke(IPC.driveRegister, uuid),
-    addFolder: () => ipcRenderer.invoke(IPC.driveAddFolder),
+    // The desktop app ignores the optional path and uses a native folder picker;
+    // the web admin panel passes a typed absolute path (no picker in a browser).
+    addFolder: (_path?: string) => ipcRenderer.invoke(IPC.driveAddFolder),
     unregister: (uuid: string) => ipcRenderer.invoke(IPC.driveUnregister, uuid),
     reveal: (uuid: string) => ipcRenderer.invoke(IPC.driveReveal, uuid),
     onChange: (cb) => {

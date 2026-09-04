@@ -88,7 +88,7 @@ export interface LocalDriveApi {
   drives: {
     listAll(): Promise<DriveInfo[]>
     register(uuid: string): Promise<DriveInfo[]>
-    addFolder(): Promise<DriveInfo[]>
+    addFolder(path?: string): Promise<DriveInfo[]>
     unregister(uuid: string): Promise<DriveInfo[]>
     reveal(uuid: string): Promise<void>
     onChange(cb: () => void): () => void

@@ -35,9 +35,10 @@ Validation on register: username ≥ 3 chars and sanitizes to a non‑empty home
 | POST | `/register` | **admin** | `{ uuid }` → registers the drive and emits drive changes; it does not grant user access. `400` if not found / unshareable. |
 | POST | `/request-access` | auth | `{ uuid }` → non‑admins request that registered drive; returns `{ access: 'pending' }` or `{ access: 'granted' }` if auto‑approved. Admins return `{ access:'granted' }`. `400` on missing/invalid uuid. |
 | POST | `/unregister` | **admin** | `{ uuid }` → unshare (custom folders are removed entirely). |
+| POST | `/register-folder` | **admin** | `{ path }` → validates an **absolute** server path, registers it as a custom folder, returns `{ drive }`. |
 
-Adding a **custom folder** and revealing a drive are desktop‑only (IPC), not HTTP — see
-[ipc-api.md](ipc-api.md).
+Adding a **custom folder** is available to admins over HTTP via `register-folder`; revealing a
+drive is desktop‑only (IPC/Finder) — see [ipc-api.md](ipc-api.md).
 
 ## Files — `/api/files` (`routes/files.ts`)
 All require auth **and** an RBAC check (`hasPermission`) on the scoped path. Mutations
@@ -101,6 +102,45 @@ Returns `{ query, hits: {drive,name,path,isDir}[] }`.
 | POST | `/acls` | `{ userId, drive, pathPrefix?, permission }` | Upsert an ACL. *(Endpoint exists but no desktop UI calls it yet — see [features.md](features.md).)* |
 | DELETE | `/acls/:id` | — | Remove an ACL. |
 
+## Server control — `/api/server` (`routes/server.ts`, **admin-only**)
+| Method | Path | Notes |
+| --- | --- | --- |
+| POST | `/start` | Starts the server and returns `{ status }`. |
+| POST | `/stop` | Replies with `{ status }`, then stops on `setImmediate` so the response is not cut off. |
+| POST | `/restart` | Replies with `{ status }`, then restarts on `setImmediate`. |
+
+Stopping from the browser admin panel also stops the origin serving that panel; use
+Restart for normal settings changes.
+
+## Config — `/api/config` (`routes/config.ts`, **admin-only**)
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| GET | `/` | — | `AppConfigView` |
+| PATCH | `/` | Partial `AppConfigView` | `{ config, restarted }` |
+
+Editable keys: `shareRootName`, `autoStart`, `registrationEnabled`,
+`autoApproveRegistrations`, `autoApproveAccessRequests`, `port`, `host`, `httpsEnabled`,
+`httpsPort`. Values are validated/coerced before saving. Changing a **restart key**
+(`port`, `host`, `httpsEnabled`, `httpsPort`) triggers `ServerManager.restart()` and
+returns `restarted: true`; other changes return `restarted: false`. Successful saves emit
+`configChanged`.
+
+## Access requests — `/api/access` (`routes/access.ts`, **admin-only**)
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/` | List pending drive access requests as `{ requests }`. |
+| POST | `/:id/approve` | Approve the request using `approveAccessRequest`. |
+| POST | `/:id/deny` | Deny the request using `denyAccessRequest`. |
+
+## Server-Sent Events — `/api/events` (`routes/events.ts`, **admin-only**)
+`GET /api/events` opens an SSE stream for the browser admin panel. EventSource cannot
+send custom headers, so it authenticates with the same-origin httpOnly `ld_token` cookie
+set by `/api/auth/login`.
+
+Named events: `statusChanged`, `drivesChanged`, `registrationsChanged`,
+`accessRequestsChanged`, and `configChanged`. The stream also sends a keepalive comment
+about every 25 seconds.
+
 ## Utility routes (in `app.ts`)
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
@@ -119,6 +159,46 @@ Returns `{ query, hits: {drive,name,path,isDir}[] }`.
 ## Static PWA
 Any non‑`/api`, non‑`/dav` path serves the built web app (`out/webui`) with an
 `index.html` SPA fallback.
+
+
+## IPC ↔ HTTP parity map
+The browser admin panel installs an HTTP-backed `window.ld` shim (`src/admin/ld-http.ts`)
+for the same `LocalDriveApi` used by the desktop preload bridge.
+
+| `window.ld` method | Electron IPC channel | Admin HTTP/SSE mapping |
+| --- | --- | --- |
+| `server.status()` | `server:status` | `GET /api/health` → `status` (public health route) |
+| `server.start()` | `server:start` | `POST /api/server/start` |
+| `server.stop()` | `server:stop` | `POST /api/server/stop` |
+| `server.restart()` | `server:restart` | `POST /api/server/restart` |
+| `server.bootstrap()` | `server:bootstrap` | Desktop-only; returns `null` on web |
+| `server.onStatus(cb)` | `evt:status` | SSE `statusChanged` from `GET /api/events` |
+| `drives.listAll()` | `drives:listAll` | `GET /api/drives/all` |
+| `drives.register(uuid)` | `drives:register` | `POST /api/drives/register`, then refreshes `GET /api/drives/all` |
+| `drives.addFolder(path?)` | `drives:addFolder` | `POST /api/drives/register-folder` with typed absolute `path`, then refreshes `GET /api/drives/all` |
+| `drives.unregister(uuid)` | `drives:unregister` | `POST /api/drives/unregister`, then refreshes `GET /api/drives/all` |
+| `drives.reveal(uuid)` | `drives:reveal` | Desktop-only Finder reveal; no-op/hidden on web |
+| `drives.onChange(cb)` | `evt:drivesChanged` | SSE `drivesChanged` |
+| `users.list()` | `users:list` | `GET /api/users` |
+| `users.create(username,password,role)` | `users:create` | `POST /api/users` |
+| `users.remove(id)` | `users:delete` | `DELETE /api/users/:id` |
+| `users.approve(id)` | `users:approve` | `POST /api/users/:id/approve` |
+| `users.setPassword(id,password)` | `users:setPassword` | `POST /api/users/:id/password` |
+| `users.setRole(id,role)` | `users:setRole` | `POST /api/users/:id/role` |
+| `users.setAcl(userId,drive,pathPrefix,permission)` | `acl:set` | `POST /api/users/acls` |
+| `users.removeAcl(id)` | `acl:remove` | `DELETE /api/users/acls/:id` |
+| `users.onRegistrationsChanged(cb)` | `evt:registrationsChanged` | SSE `registrationsChanged` |
+| `access.list()` | `access:list` | `GET /api/access` |
+| `access.approve(id)` | `access:approve` | `POST /api/access/:id/approve` |
+| `access.deny(id)` | `access:deny` | `POST /api/access/:id/deny` |
+| `access.onChange(cb)` | `evt:accessRequestsChanged` | SSE `accessRequestsChanged` |
+| `dashboard()` | `app:dashboard` | `GET /api/stats` |
+| `connect()` | `app:connect` | `GET /api/connect` |
+| `config.get()` | `config:get` | `GET /api/config` |
+| `config.set(patch)` | `config:set` | `PATCH /api/config`; SSE `configChanged` may follow |
+| `revealCert()` | `cert:reveal` | Desktop-only Finder reveal; no-op/hidden on web (`GET /api/cert` is the download route) |
+| `openExternal(url)` | `app:openExternal` | `window.open(url, '_blank', 'noopener')` |
+| `platform` | — | Desktop: `process.platform`; web/admin: `'web'` |
 
 ## Related
 - Client wrapper for these routes: `src/webui/src/api.ts` (see [frontend.md](frontend.md)).

@@ -12,12 +12,13 @@ import { buildWebdav } from './webdav.js'
 import { loadTlsMaterial } from './tls.js'
 import { startDiscovery, stopDiscovery } from './discovery.js'
 import { setStatus, getStatus } from './status.js'
-import { buildUrls } from './util/net.js'
+import { buildUrls, lanAddresses } from './util/net.js'
 import { bus, EVENTS } from './events.js'
 import type { ServerStatus } from '../shared/types.js'
 
 export interface ServerManagerOptions {
   webuiDir?: string
+  adminDir?: string
 }
 
 /**
@@ -30,11 +31,14 @@ export class ServerManager {
   private httpsServer: https.Server | null = null
   private sockets = new Set<Duplex>()
   private webuiDir: string
+  private adminDir: string
   private starting = false
+  private addrWatch: ReturnType<typeof setInterval> | null = null
   private pendingBootstrap: { username: string; password: string } | null | undefined
 
   constructor(opts: ServerManagerOptions = {}) {
     this.webuiDir = opts.webuiDir || join(process.cwd(), 'out', 'webui')
+    this.adminDir = opts.adminDir || join(process.cwd(), 'out', 'admin')
     // Rebuild WebDAV mounts whenever the set of registered drives changes.
     bus.on(EVENTS.drivesChanged, () => {
       if (this.server) this.rebuildWebdav().catch(() => {})
@@ -84,7 +88,7 @@ export class ServerManager {
       await backfillHomes()
       await this.rebuildWebdav()
 
-      const app = createApp({ webuiDir: this.webuiDir })
+      const app = createApp({ webuiDir: this.webuiDir, adminDir: this.adminDir })
       const server = http.createServer(app)
 
       server.on('connection', (socket) => {
@@ -134,10 +138,7 @@ export class ServerManager {
       const hostname = localHostname()
       startDiscovery(config.port, httpsActive ? { httpsPort } : {})
       // HTTPS URLs first so the QR/primary link prefers the secure endpoint.
-      const urls = [
-        ...(httpsActive ? buildUrls(httpsPort, hostname, 'https') : []),
-        ...buildUrls(config.port, hostname, 'http')
-      ]
+      const urls = this.computeUrls(config.port, httpsActive, httpsPort, hostname)
       setStatus({
         running: true,
         port: config.port,
@@ -152,9 +153,51 @@ export class ServerManager {
       logActivity('server_start', {
         detail: `port ${config.port}${httpsActive ? ` +https ${httpsPort}` : ''}`
       })
+      bus.emit(EVENTS.statusChanged, getStatus())
+      this.startAddressWatch()
       return getStatus()
     } finally {
       this.starting = false
+    }
+  }
+
+  /** Build the list of connect URLs (HTTPS first) for the given listeners. */
+  private computeUrls(
+    port: number,
+    httpsActive: boolean,
+    httpsPort: number,
+    hostname: string
+  ): string[] {
+    return [
+      ...(httpsActive ? buildUrls(httpsPort, hostname, 'https') : []),
+      ...buildUrls(port, hostname, 'http')
+    ]
+  }
+
+  /**
+   * Watch for LAN address changes (e.g. joining a new WiFi network) while the
+   * server runs, and refresh the advertised URLs so both the headless terminal
+   * and connected web panels see the new address without a restart.
+   */
+  private startAddressWatch(): void {
+    this.stopAddressWatch()
+    let sig = [...lanAddresses()].sort().join(',')
+    this.addrWatch = setInterval(() => {
+      if (!this.server) return
+      const next = [...lanAddresses()].sort().join(',')
+      if (next === sig) return
+      sig = next
+      const st = getStatus()
+      setStatus({ urls: this.computeUrls(st.port, st.https, st.httpsPort, st.hostname) })
+      bus.emit(EVENTS.statusChanged, getStatus())
+    }, 5000)
+    this.addrWatch.unref?.()
+  }
+
+  private stopAddressWatch(): void {
+    if (this.addrWatch) {
+      clearInterval(this.addrWatch)
+      this.addrWatch = null
     }
   }
 
@@ -165,6 +208,7 @@ export class ServerManager {
     this.server = null
     this.httpsServer = null
     stopDiscovery()
+    this.stopAddressWatch()
 
     await new Promise<void>((resolve) => {
       let settled = false
@@ -190,6 +234,7 @@ export class ServerManager {
     checkpoint()
     setStatus({ running: false, urls: [], startedAt: null, activeConnections: 0, https: false, httpsPort: 0 })
     logActivity('server_stop', {})
+    bus.emit(EVENTS.statusChanged, getStatus())
   }
 
   async restart(): Promise<ServerStatus> {

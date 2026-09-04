@@ -1,21 +1,23 @@
 # Project structure
 
 Every path is under `src/` unless noted. Aliases: `@shared` → `src/shared`,
-`@renderer` → `src/renderer/src`, `@webui` → `src/webui/src`.
+`@renderer` → `src/renderer/src`, `@webui` → `src/webui/src`, `@admin` → `src/admin`.
 
 ## Top-level layout
 ```
 src/
   main/       Electron main process (Node)
   preload/    contextBridge → window.ld
-  renderer/   Desktop control-center UI (React)
+  renderer/   Desktop/admin control-center UI components (React)
+  admin/      Browser admin panel shell + HTTP window.ld shim
   webui/      Client web PWA (React + Uppy/tus)
   server/     Embedded HTTP/WebDAV server + all backend logic
   shared/     Types + IPC contract shared across all of the above
 electron.vite.config.ts   Build config for main/preload/renderer
 vite.webui.config.ts      Build config for the web PWA (+ PWA/service worker)
+vite.admin.config.ts      Build config for the /admin SPA (no service worker)
 tsconfig.node.json        Type-check project for main/preload/server/shared
-tsconfig.web.json         Type-check project for renderer + webui
+tsconfig.web.json         Type-check project for renderer + webui + admin
 build/                    App icon + tray template images (packaged as resources)
 ```
 
@@ -29,6 +31,7 @@ build/                    App icon + tray template images (packaged as resources
     debounced re‑`syncDrives()` + notify the renderer on plug/unplug.
   - `registerIpc()` — every `ipcMain.handle(...)`; see [ipc-api.md](ipc-api.md).
   - First‑run bootstrap + optional auto‑start; forwards `bus` events to the renderer;
+    prints the live connection banner in headless mode; supports `--reset-admin` recovery;
     `before-quit` → `manager.shutdown()`.
   - Error resilience: `uncaughtException`/`unhandledRejection` and startup failures are
     appended to `<configDir>/logs/main.log` (packaged apps have no terminal).
@@ -51,6 +54,18 @@ build/                    App icon + tray template images (packaged as resources
 - **`ui.tsx`** — reusable primitives: `ToastProvider`/`useToast`, `Modal`, `ConfirmDialog`,
   `Switch`, `Avatar`, `Menu`, `PasswordInput`.
 - **`util.ts`**, **`global.d.ts`** — helpers and the `window.ld` type declaration.
+
+
+## `src/admin` — browser admin control panel
+- **`index.html`** — Vite entry served under `/admin` (script `./main.tsx`).
+- **`main.tsx`** — installs the HTTP `LocalDriveApi` shim as `window.ld`, wraps the shared
+  renderer `<App/>` in `ToastProvider`, imports `@renderer/styles.css`, and gates access:
+  `GET /api/auth/me`, `AdminLogin` via `POST /api/auth/login`, non-admin logout +
+  "Administrators only", and an `ld:reconnect` banner after server moves/restarts.
+- **`admin.css`** — login and reconnect-banner styles only; the app shell reuses desktop
+  renderer CSS.
+- **`ld-http.ts`** — HTTP/SSE-backed implementation of `LocalDriveApi` (`platform: 'web'`)
+  so `/admin` and the desktop control center share the same components.
 
 ## `src/webui` — client PWA (served to browsers)
 - **`index.html`**, **`public/`** — HTML shell + icons/manifest assets.
@@ -77,13 +92,14 @@ Entry/lifecycle:
   (override: `LOCALDRIVE_HOME`).
 
 HTTP layer (`server/http/`):
-- **`app.ts`** — `createApp()` (middleware/router wiring; `setWebdavHandler`).
+- **`app.ts`** — `createApp()` (middleware/router wiring; `setWebdavHandler`; static
+  `/admin` when `adminDir` is provided, before the PWA catch-all).
 - **`middleware.ts`** — `attachUser`, `resolveUser(Raw)`, `requireAuth`, `requireAdmin`,
   `requirePermission`; the `ld_token` cookie name.
 - **`scope.ts`** — `driveScope(req, driveUuid)` → `{ home, in(), out() }` confinement,
   including admin web view mode from the restrict‑only `ld_view` cookie.
 - **`routes/`** — `auth.ts`, `drives.ts`, `files.ts`, `uploads.ts` (tus), `search.ts`,
-  `stats.ts`, `users.ts`.
+  `stats.ts`, `users.ts`, `server.ts`, `config.ts`, `access.ts`, `events.ts`.
 
 Auth / users / access:
 - **`auth.ts`** — bcrypt hashing, JWT sign/verify, user CRUD, `createPendingUser`/
@@ -116,7 +132,8 @@ Networking / security / misc:
   `bumpStat`/`getStats`, `logActivity`.
 - **`dashboard.ts`** — assemble the dashboard payload (transfers, drives, status, activity).
 - **`util/`** — `fs-safe.ts` (path confinement + name sanitizing), `atomic.ts`
-  (`moveAtomic`), `net.ts` (LAN IPs, URL building, QR pick), `paths.ts` (`parentOf`).
+  (`moveAtomic`), `net.ts` (LAN IPs, URL building, QR pick), `paths.ts` (`parentOf`),
+  `report.ts` (shared headless/standalone connection banner).
 
 ## `src/shared` — cross-process contracts
 - **`types.ts`** — domain types: `Role`, `Permission`, `UserStatus`, `User`, `DriveInfo`,
@@ -129,6 +146,8 @@ Networking / security / misc:
 ```
 out/main/index.cjs        out/preload/index.cjs
 out/renderer/…            out/webui/…  (index.html, assets/index-*.{js,css}, sw.js, workbox-*.js)
+out/admin/…               (/admin SPA, no service worker)
 ```
-`electron-builder` packages `out/**` into `release/` (DMG + zip). The web PWA is copied to
-the app bundle as an extra resource (`webui`), which the server serves as static files.
+`electron-builder` packages `out/**` into `release/` (DMG + zip). The web PWA and admin
+panel are copied to the app bundle as extra resources (`webui`, `admin`), which the server
+serves as static files.

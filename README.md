@@ -9,6 +9,10 @@ can be added at any time.
 ## Highlights
 
 - **Native macOS app** (Electron) — a menu‑bar/tray control center. No Xcode required.
+- **Browser admin control panel** — open `/admin` to manage the server from the same
+  Dashboard/Drives/Users/Connect/Settings UI as the desktop app (admin-only).
+- **Headless mode** — run the packaged app without a window/tray while serving the web UI,
+  WebDAV, and `/admin`.
 - **Two ways for clients to connect**
   - **Web UI** — an installable, mobile‑first PWA with dark mode (open `http://<your-mac>.local:<port>`).
   - **WebDAV** — mount as a normal drive in Finder / Windows Explorer / Android; each
@@ -89,7 +93,21 @@ uploads, portable `users.json` manifest) lives in a hidden `.localdrive/` folder
 same drive. Admins see the whole `LocalDrive/` by default and can switch the web UI to
 **My space** when they want only their own folder.
 Central settings, accounts, and the drive registry live in
-`~/Library/Application Support/LocalDrive/`.
+`~/Library/Application Support/LocalDrive/`. Admins can also open `http://<host>:<port>/admin`
+to use the browser control panel.
+
+
+### Headless mode
+Run the packaged app without the desktop window/tray:
+
+```bash
+/Applications/LocalDrive.app/Contents/MacOS/LocalDrive --headless
+```
+
+Headless mode prints a live connection banner with client URLs, `/admin` URLs, status,
+ports, config location, and first-run admin credentials when created. When attached to a
+terminal, press `r` to restart or `q`/Ctrl-C to quit. If the admin password is lost, start
+with `--reset-admin` or set `LOCALDRIVE_ADMIN_PASSWORD` to reset and print it.
 
 ## Project layout
 
@@ -97,7 +115,8 @@ Central settings, accounts, and the drive registry live in
 src/
   main/        Electron main process (tray, window, IPC, drive hot‑plug watcher)
   preload/     contextBridge API exposed to the renderer (window.ld)
-  renderer/    Desktop control‑center UI (React)
+  renderer/    Shared desktop/admin control‑center UI (React)
+  admin/       Browser admin panel shell + HTTP window.ld shim
   webui/       Client web PWA served to browsers (React + Uppy)
   server/      Embedded HTTP/WebDAV server, auth/RBAC, file ops, uploads, discovery
   shared/      Types and the IPC contract shared across all of the above
@@ -108,8 +127,9 @@ src/
 | Script                | What it does                                             |
 | --------------------- | ------------------------------------------------------- |
 | `npm run dev`         | Run the Electron app in development                     |
-| `npm run build`       | Build the web PWA + Electron bundles into `out/`        |
+| `npm run build`       | Build the web PWA + admin panel + Electron bundles into `out/` |
 | `npm run build:webui` | Build only the client PWA                               |
+| `npm run build:admin` | Build only the browser admin panel                     |
 | `npm run server:dev`  | Run the server standalone (no Electron) with hot reload |
 | `npm run typecheck`   | Type‑check the whole codebase                           |
 | `npm run package`     | Produce an unpacked `.app`                              |

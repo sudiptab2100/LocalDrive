@@ -1,14 +1,14 @@
 # Frontend guide
 
-Two independent React 18 + TypeScript frontends live in this repo. They share **no**
-code and have different jobs.
+LocalDrive has a client PWA plus one shared operator UI. The desktop control center and
+the browser admin control panel reuse the same renderer components; do not fork them.
 
-| | Web PWA (`src/webui`) | Desktop control center (`src/renderer`) |
-| --- | --- | --- |
-| Who | End users on phones/laptops over Wi‑Fi | The Mac operator running the app |
-| Transport | HTTP (`src/webui/src/api.ts`) + tus uploads | Electron IPC (`window.ld`) — see [ipc-api.md](ipc-api.md) |
-| Built by | `vite.webui.config.ts` → `out/webui` (PWA) | electron‑vite renderer → `out/renderer` |
-| Entry | `src/webui/src/main.tsx` → `App.tsx` | `src/renderer/src/main.tsx` → `App.tsx` |
+| | Web PWA (`src/webui`) | Desktop control center (`src/renderer`) | Admin control panel (`src/admin`) |
+| --- | --- | --- | --- |
+| Who | End users on phones/laptops over Wi‑Fi | The Mac operator running the app | Admins in a browser at `/admin` |
+| Transport | HTTP (`src/webui/src/api.ts`) + tus uploads | Electron IPC (`window.ld`) — see [ipc-api.md](ipc-api.md) | HTTP/SSE `window.ld` shim (`src/admin/ld-http.ts`) |
+| Built by | `vite.webui.config.ts` → `out/webui` (PWA) | electron‑vite renderer → `out/renderer` | `vite.admin.config.ts` → `out/admin` |
+| Entry | `src/webui/src/main.tsx` → `App.tsx` | `src/renderer/src/main.tsx` → `App.tsx` | `src/admin/main.tsx` → shared `@renderer/App` |
 
 ---
 
@@ -76,6 +76,24 @@ Selection reveals a **bulk action bar** (download‑zip / move / copy / delete).
 
 ---
 
+
+## Shared operator UI — desktop + `/admin`
+`src/renderer/src` is the single component codebase for Dashboard, Drives, Users,
+Connect, and Settings. The desktop preload exposes `window.ld` over IPC; the browser admin
+panel (`src/admin`) installs an HTTP-backed `LocalDriveApi` as `window.ld`, wraps the same
+`<App/>` in `ToastProvider`, and imports the same `@renderer/styles.css`. Keep behavior in
+shared components and gate platform-only affordances with `ld().platform`, not forks.
+
+Browser-specific gates use `ld().platform === 'web'`:
+- **Share a folder…** opens `AddFolderModal`, asks for a typed absolute server path, and
+  calls `ld().drives.addFolder(path)` (`POST /api/drives/register-folder`). Desktop still
+  ignores the argument and opens the native folder picker.
+- Finder-only buttons are hidden: drive **Reveal** and Settings **Reveal certificate file**.
+  The web **Download certificate** button remains and points at same-origin `/api/cert`.
+- If a web settings change moves the server (Port/HTTPS), `ld-http.ts` dispatches
+  `ld:reconnect`; the admin shell shows a reconnect banner with the new `/admin` URL.
+  Stopping the server from the web cuts off the panel; Restart is the normal path.
+
 ## Desktop renderer — `src/renderer/src/App.tsx`
 The operator's control center. A `topbar` (server status dot + Start/Stop/Restart), a
 first‑run **bootstrap** banner showing the one‑time admin credentials, and five tabs:
@@ -88,7 +106,7 @@ first‑run **bootstrap** banner showing the one‑time admin credentials, and f
 | Connect | `ConnectPanel` | URLs + QR for onboarding clients; reveal CA cert |
 | Settings | `SettingsPanel` | Edit `AppConfigView` (port, host, autostart, HTTPS, registration settings) |
 
-- State comes entirely from **`window.ld`** (no HTTP). Live updates via the push
+- State comes entirely from **`window.ld`**: IPC on desktop, HTTP/SSE in `/admin`. Live updates via the push
   subscriptions `onStatus`, `drives.onChange`, `users.onRegistrationsChanged`, and
   `access.onChange` — account and drive access events drive the **pending badge** on the
   Users tab.

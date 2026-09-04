@@ -14,6 +14,7 @@ import {
   deleteUser,
   approveUser,
   getUserById,
+  getUserByName,
   setUserPassword,
   setUserRole,
   setAcl,
@@ -29,12 +30,18 @@ import { qrDataUrl } from '../server/discovery.js'
 import { pickQrUrl } from '../server/util/net.js'
 import { getStatus } from '../server/status.js'
 import { getCaCertPath } from '../server/tls.js'
+import { formatConnectionBanner } from '../server/util/report.js'
 import { bus, EVENTS } from '../server/events.js'
 import { IPC, type UserWithAcls } from '../shared/ipc.js'
 import type { Role, Permission } from '../shared/types.js'
+import { randomBytes } from 'crypto'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDev = !!process.env.ELECTRON_RENDERER_URL
+/** Headless mode: run the server + web/admin panels with no window or tray,
+ * printing a live-updating connection banner to the terminal. */
+const isHeadless =
+  process.argv.includes('--headless') || process.env.LOCALDRIVE_HEADLESS === '1'
 
 /** Append startup/runtime errors to a log file so failures in the packaged
  * app (which has no attached terminal) are diagnosable. */
@@ -97,7 +104,13 @@ function webuiDir(): string {
     : resolveResource('webui')
 }
 
-const manager = getServerManager({ webuiDir: webuiDir() })
+function adminDir(): string {
+  return isDev
+    ? join(process.cwd(), 'out', 'admin')
+    : resolveResource('admin')
+}
+
+const manager = getServerManager({ webuiDir: webuiDir(), adminDir: adminDir() })
 
 function notify(title: string, body: string): void {
   if (Notification.isSupported()) new Notification({ title, body }).show()
@@ -335,6 +348,79 @@ function registerIpc(): void {
   ipcMain.handle(IPC.openExternal, (_e, url: string) => shell.openExternal(url))
 }
 
+// ---- Headless (no-window) mode --------------------------------------------
+function printHeadlessBanner(created?: { username: string; password: string } | null): void {
+  console.log(
+    formatConnectionBanner(getStatus(), loadConfig(), {
+      configDir: getPaths().configDir,
+      created: created ?? null,
+      headless: true
+    })
+  )
+}
+
+/** Recovery path: (re)set an admin password from the terminal and return it so
+ * a lost password can never brick a headless install. */
+function resetAdminPassword(): { username: string; password: string } | null {
+  const admin = getUserByName('admin') ?? listUsers().find((u) => u.role === 'admin') ?? null
+  if (!admin) return null
+  const password = process.env.LOCALDRIVE_ADMIN_PASSWORD || randomBytes(6).toString('base64url')
+  setUserPassword(admin.id, password)
+  return { username: admin.username, password }
+}
+
+async function runHeadless(): Promise<void> {
+  app.dock?.hide()
+
+  // First-run creates the admin; `--reset-admin`/LOCALDRIVE_ADMIN_PASSWORD resets it.
+  let created = manager.bootstrap()
+  if (
+    !created &&
+    (process.argv.includes('--reset-admin') || process.env.LOCALDRIVE_ADMIN_PASSWORD)
+  ) {
+    created = resetAdminPassword()
+  }
+
+  // Re-sync on external-drive plug/unplug, and reprint the banner whenever the
+  // server status (port/HTTPS/LAN addresses) or config changes.
+  watchVolumes()
+  bus.on(EVENTS.statusChanged, () => printHeadlessBanner())
+  bus.on(EVENTS.configChanged, () => printHeadlessBanner())
+
+  try {
+    await manager.start()
+  } catch (e) {
+    logError('headless-start', e)
+    console.error('LocalDrive failed to start:', (e as Error)?.message || String(e))
+    app.exit(1)
+    return
+  }
+  printHeadlessBanner(created)
+  console.log('  Controls   : press “r” to restart · “q” or Ctrl-C to quit')
+
+  const quit = (): void => {
+    console.log('\nShutting down…')
+    ;(app as unknown as { isQuitting?: boolean }).isQuitting = true
+    app.quit()
+  }
+
+  if (process.stdin.isTTY) {
+    try {
+      process.stdin.setRawMode(true)
+      process.stdin.resume()
+      process.stdin.setEncoding('utf8')
+      process.stdin.on('data', (key: string) => {
+        if (key === 'r') manager.restart().catch((e) => logError('headless-restart', e))
+        else if (key === 'q' || key === '\u0003') quit()
+      })
+    } catch {
+      /* raw mode unavailable (e.g. piped stdin) — SIGINT still works */
+    }
+  }
+  process.on('SIGINT', quit)
+  process.on('SIGTERM', quit)
+}
+
 // ---- Lifecycle ------------------------------------------------------------
 const singleLock = app.requestSingleInstanceLock()
 if (!singleLock) {
@@ -344,6 +430,18 @@ if (!singleLock) {
 
   app.whenReady().then(async () => {
     getPaths()
+
+    // Headless mode: no window/tray/IPC — just the server + banner.
+    if (isHeadless) {
+      try {
+        await runHeadless()
+      } catch (e) {
+        logError('headless', e)
+        app.exit(1)
+      }
+      return
+    }
+
     try {
       registerIpc()
     } catch (e) {

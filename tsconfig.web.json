@@ -14,7 +14,9 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["src/shared/*"],
+      "@renderer/*": ["src/renderer/src/*"],
+      "@admin/*": ["src/admin/*"]
     }
   },
   "include": [
@@ -22,6 +24,8 @@
     "src/renderer/**/*.tsx",
     "src/webui/**/*.ts",
     "src/webui/**/*.tsx",
+    "src/admin/**/*.ts",
+    "src/admin/**/*.tsx",
     "src/shared/**/*.ts"
   ]
 }
