@@ -5,6 +5,7 @@ import { getDb } from './db/index.js'
 import {
   listUsers,
   getUserById,
+  getUserHome,
   setAcl,
   setUserHome,
   ensureUniqueHome
@@ -68,6 +69,27 @@ export async function provisionUserHome(user: User): Promise<void> {
     await ensureUserHomeDir(uuid, user.home)
   }
   for (const uuid of uuids) await writeUsersManifest(uuid)
+}
+
+/**
+ * Idempotent self-heal for a single user: ensure they have a home ACL on every
+ * registered drive, filling only the gaps. Cheap on the common path (no writes
+ * when already fully provisioned), so it is safe to call on every drive listing.
+ * Guarantees a user always sees every shared drive, even if an earlier
+ * provisioning step was missed (e.g. a drive registered while the user was
+ * temporarily unknown, or legacy data from an older build).
+ */
+export async function ensureUserProvisioned(user: User): Promise<boolean> {
+  if (user.role === 'admin' || !user.home) return false
+  let healed = false
+  for (const uuid of registeredDriveUuids()) {
+    if (getUserHome(user, uuid) == null) {
+      setAcl(user.id, uuid, user.home, 'write')
+      await ensureUserHomeDir(uuid, user.home)
+      healed = true
+    }
+  }
+  return healed
 }
 
 /** Provision every non-admin, active user's home on a newly-registered drive. */

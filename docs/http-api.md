@@ -28,7 +28,7 @@ Validation on register: username ≥ 3 chars and sanitizes to a non‑empty home
 ## Drives — `/api/drives` (`routes/drives.ts`)
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| GET | `/` | auth | Drives visible to the caller: `registered && getUserHome(user,uuid) != null`. Returns `{ drives: DriveInfo[] }` (includes `totalBytes`/`freeBytes`). |
+| GET | `/` | auth | Drives visible to the caller: `registered && getUserHome(user,uuid) != null`. Returns `{ drives: DriveInfo[] }` (includes `totalBytes`/`freeBytes`). **Self-heals first:** calls `ensureUserProvisioned(user)` so any missing per-drive home/ACL for the caller is created before listing — a user always sees **every** registered drive (idempotent; writes only when a gap exists). |
 | GET | `/all` | **admin** | Every detected drive (registered or not) for management. |
 | POST | `/register` | **admin** | `{ uuid }` → registers + `provisionDriveForAllUsers`. `400` if not found / unshareable. |
 | POST | `/unregister` | **admin** | `{ uuid }` → unshare (custom folders are removed entirely). |

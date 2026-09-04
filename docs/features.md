@@ -47,7 +47,11 @@ Sharing is **automatic and uniform**, not selective:
 - Registering a drive provisions a private `LocalDrive/<home>/` folder **and** a `write`
   ACL for **every** active non‑admin user.
 - Creating/approving a user provisions them on **every** registered drive.
-- `backfillHomesAndProvision()` reconciles this at startup.
+- `backfillHomesAndProvision()` reconciles this at startup, and `GET /api/drives`
+  self‑heals per request via `ensureUserProvisioned()` — so a user is **guaranteed** to
+  see every registered drive even if an earlier provisioning step was missed.
+- Web clients aren't on the Electron event bus, so the web UI refetches the drive list on
+  focus/visibility (+ a light interval); newly shared drives appear without a reload.
 - There is currently **no UI** to share a specific drive/subfolder with a specific user.
   The ACL model and `POST /api/users/acls` endpoint support it — wiring a UI is the
   natural next step. Every non‑admin user sees each drive by its real name with its own

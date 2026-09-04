@@ -2,15 +2,18 @@ import { Router } from 'express'
 import { syncDrives, registerDrive, unregisterDrive } from '../../drives/registry.js'
 import { requireAuth, requireAdmin } from '../middleware.js'
 import { getUserHome } from '../../auth.js'
-import { provisionDriveForAllUsers } from '../../provisioning.js'
+import { provisionDriveForAllUsers, ensureUserProvisioned } from '../../provisioning.js'
 import { logActivity } from '../../db/index.js'
 
 export const drivesRouter = Router()
 
 // Drives the current user can see (registered + provisioned for them).
 drivesRouter.get('/', requireAuth, async (req, res) => {
-  const all = await syncDrives()
   const user = req.user!
+  // Self-heal any missing per-drive access so a user always sees every shared
+  // drive, then list. Idempotent and cheap when already fully provisioned.
+  await ensureUserProvisioned(user)
+  const all = await syncDrives()
   const visible = all.filter((d) => d.registered && getUserHome(user, d.uuid) != null)
   res.json({ drives: visible })
 })

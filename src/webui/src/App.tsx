@@ -120,6 +120,24 @@ export function App() {
       .finally(() => setAuthChecked(true))
   }, [refreshDrives, toast])
 
+  // Browser clients aren't on the Electron event bus, so they receive no push
+  // when drives are shared/unshared. Keep the drive list fresh by refetching
+  // when the tab regains focus/visibility and on a gentle interval while visible.
+  useEffect(() => {
+    if (!user) return
+    const refresh = (): void => {
+      if (document.visibilityState === 'visible') void refreshDrives().catch(() => {})
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    const timer = window.setInterval(refresh, 20000)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+      window.clearInterval(timer)
+    }
+  }, [user, refreshDrives])
+
   useEffect(() => {
     void refreshList()
   }, [refreshList])

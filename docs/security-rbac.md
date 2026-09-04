@@ -72,9 +72,11 @@ Sharing is **uniform**: registering a drive gives **every active non‑admin use
 `write` ACL on their `home` + a physical `LocalDrive/<home>/` folder; creating/approving a
 user provisions them on **every** registered drive. `backfillHomesAndProvision()` runs at
 server start to reconcile (assign missing homes, provision, and strip stale whole‑drive
-grants). There is currently **no UI to grant a specific drive/subfolder to a specific
-user** even though `setAcl` / `POST /api/users/acls` support it — see
-[features.md](features.md).
+grants), and `ensureUserProvisioned(user)` re‑reconciles the caller on every
+`GET /api/drives` (idempotent; fills only missing per‑drive ACLs) — guaranteeing a user
+always sees every registered drive. There is currently **no UI to grant a specific
+drive/subfolder to a specific user** even though `setAcl` / `POST /api/users/acls` support
+it — see [features.md](features.md).
 
 ## WebDAV specifics (`src/server/webdav.ts`)
 - Each registered online drive is mounted at a stable, slugified URL segment shared by all

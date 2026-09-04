@@ -30,6 +30,11 @@ A single‑file file browser (~1.3k lines) plus small components. It's an instal
 - On mount: `api.me()` establishes the session (cookie), then `api.drives()` and an
   initial `api.list(...)`. A `401` anywhere sends the user back to the `Login` view
   (handled by inspecting `ApiRequestError.status`).
+- **Keeping the drive list live:** browsers aren't on the Electron event bus, so they get
+  no push when drives are shared/unshared. A dedicated effect refetches `api.drives()` on
+  window `focus` and `visibilitychange` (when visible) plus a ~20s interval while visible,
+  so newly shared drives appear without a manual reload. `refreshDrives()` preserves the
+  current selection.
 - Navigation sets `currentDriveId`/`currentPath` and re‑calls `api.list`. Breadcrumbs are
   derived from `currentPath`.
 - All server calls go through the typed **`api`** object in `src/webui/src/api.ts`
