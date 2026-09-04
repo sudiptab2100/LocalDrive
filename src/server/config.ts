@@ -29,6 +29,8 @@ export interface AppConfig {
   registrationEnabled: boolean
   /** When true, self-registered accounts become active immediately (no manual approval). */
   autoApproveRegistrations: boolean
+  /** When true, per-drive access requests are granted immediately (no manual approval). */
+  autoApproveAccessRequests: boolean
 }
 
 const DEFAULTS: Omit<AppConfig, 'jwtSecret'> = {
@@ -40,7 +42,8 @@ const DEFAULTS: Omit<AppConfig, 'jwtSecret'> = {
   httpsEnabled: false,
   httpsPort: 4843,
   registrationEnabled: true,
-  autoApproveRegistrations: false
+  autoApproveRegistrations: false,
+  autoApproveAccessRequests: false
 }
 
 export interface Paths {

@@ -22,9 +22,13 @@ can be added at any time.
 - **Optional encrypted HTTPS** — one‑click self‑signed TLS with a built‑in local
   certificate authority; install the root certificate once per device for a trusted
   padlock, and the server cert auto‑renews as your Wi‑Fi IP changes.
-- **Private per‑user home folders** — every account automatically gets its own
-  `LocalDrive/<username>/` folder and is confined to it over both the web UI **and** WebDAV;
-  admins can browse the whole drive and reset any user's password.
+- **Opt‑in per‑drive spaces** — users see shared drives after login but request access per
+  drive; admins approve from the desktop **Users** tab (or enable auto‑approve). Approval
+  creates or reuses the user's deterministic `LocalDrive/<username>/` folder, portable
+  across Macs via the drive's `.localdrive/users.json` manifest.
+- **Admin dual‑mode browsing** — admins implicitly access every drive and can switch the
+  web UI between **Admin view** (whole share) and **My space** (their own folder); WebDAV
+  remains whole‑share for admins.
 - **Resumable, large uploads** (tus protocol via Uppy) — pause/resume, drag‑and‑drop, progress.
 - **Bulk actions + streaming ZIP** download of selected files/folders.
 - **Thumbnails & inline preview** for images, PDFs, text, audio, and video (HTTP range requests).
@@ -72,14 +76,18 @@ npm run dist         # DMG + zip       -> release/
      manager, signing in with your LocalDrive username and password. If `.local` doesn't
      resolve on your device (e.g. some Android/Windows clients), use the Mac's LAN IP
      instead, e.g. `http://192.168.1.62:4820/dav`.
-5. Create users and grant per‑folder access in the **Users** tab. You can also let people
-   **register their own account** from the web login page — requests show up in the **Users**
-   tab for you to **Approve**/**Reject** (or enable **auto‑approve**).
+5. Create users in the **Users** tab or let people **register their own account** from
+   the web login page — account requests show up for **Approve**/**Reject** (or enable
+   registration auto‑approve). After signing in, non‑admins can see all registered drives
+   but must request access to each one; approve drive requests in the **Drive access
+   requests** card (or enable **Auto‑approve drive access requests**).
 
-Files are stored on the drive under a `LocalDrive/` folder, with each user's private files
-under `LocalDrive/<username>/` (admins see the whole `LocalDrive/`); per‑drive metadata
-(index, thumbnails, in‑progress uploads) lives in a hidden `.localdrive/` folder on the same
-drive.
+Files are stored on the drive under a `LocalDrive/` folder. Approved users get a private,
+deterministic `LocalDrive/<username>/` userspace that is reused when the same physical
+drive is shared from another Mac; per‑drive metadata (index, thumbnails, in‑progress
+uploads, portable `users.json` manifest) lives in a hidden `.localdrive/` folder on the
+same drive. Admins see the whole `LocalDrive/` by default and can switch the web UI to
+**My space** when they want only their own folder.
 Central settings, accounts, and the drive registry live in
 `~/Library/Application Support/LocalDrive/`.
 

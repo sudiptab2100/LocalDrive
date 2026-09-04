@@ -6,7 +6,7 @@ import { createApp, setWebdavHandler } from './http/app.js'
 import { loadConfig, localHostname, type AppConfig } from './config.js'
 import { getDb, checkpoint, closeDb, logActivity } from './db/index.js'
 import { bootstrapAdmin } from './auth.js'
-import { backfillHomesAndProvision } from './provisioning.js'
+import { backfillHomes } from './provisioning.js'
 import { syncDrives, listRegisteredDrives, getShareRoot } from './drives/registry.js'
 import { buildWebdav } from './webdav.js'
 import { loadTlsMaterial } from './tls.js'
@@ -81,7 +81,7 @@ export class ServerManager {
       const config: AppConfig = loadConfig()
       getDb() // ensure DB + schema
       await syncDrives()
-      await backfillHomesAndProvision()
+      await backfillHomes()
       await this.rebuildWebdav()
 
       const app = createApp({ webuiDir: this.webuiDir })

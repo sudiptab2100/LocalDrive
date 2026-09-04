@@ -82,6 +82,8 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
 .drive-select { flex: 0 1 15rem; width: 100%; }
 .topbar-tools { flex: 0 0 auto; display: flex; align-items: center; gap: var(--s2); }
 .icon-button { width: var(--tap); padding: 0; }
+.view-toggle { flex: 0 0 auto; font-size: 0.82rem; font-weight: 700; white-space: nowrap; padding: var(--s1) var(--s3); border-radius: var(--r-xl); }
+.view-toggle:not(:disabled) { color: var(--muted); }
 .user-menu { display: flex; align-items: center; gap: var(--s2); }
 .user-menu span { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .modal-backdrop.search-backdrop { align-items: start; }

@@ -5,9 +5,10 @@ import {
   bootstrapAdmin,
   createUser,
   createPendingUser,
-  getUserByName
+  getUserByName,
+  homeNameFor,
+  isHomeTaken
 } from '../../auth.js'
-import { provisionUserHome } from '../../provisioning.js'
 import { loadConfig } from '../../config.js'
 import { sanitizeHomeName } from '../../util/fs-safe.js'
 import { bus, EVENTS } from '../../events.js'
@@ -86,10 +87,15 @@ authRouter.post('/register', async (req, res) => {
     res.status(409).json({ error: 'That username is already taken' })
     return
   }
+  // The userspace folder name is a deterministic, portable key — reject a
+  // username that would collide with an existing user's folder.
+  if (isHomeTaken(homeNameFor(username))) {
+    res.status(409).json({ error: 'That username is too similar to an existing account. Please choose another.' })
+    return
+  }
 
   if (cfg.autoApproveRegistrations) {
     const user = createUser(username, password, 'user', 'active')
-    await provisionUserHome(user)
     const token = signToken(user)
     res.cookie(AUTH_COOKIE, token, COOKIE_OPTS(req.secure))
     logActivity('register', {

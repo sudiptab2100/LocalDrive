@@ -51,13 +51,16 @@ npm run dist           # produce release/ DMG + zip (electron-builder)
 - **Path confinement is mandatory.** All user paths go through `safeResolve` /
   `scopeIn` / `scopeOut` (`src/server/util/fs-safe.ts` + `http/scope.ts`). Never join a
   client path onto a drive root without them.
-- **Per‑user home + RBAC.** Non‑admins are confined to `LocalDrive/<home>/` on every drive
-  and see it as `/`; admins see the whole share. Enforce with `hasPermission` /
-  `driveScope`. This holds for **both** the web API and WebDAV.
-- **Every user sees every registered drive.** Sharing is uniform: each active non‑admin is
-  provisioned (home + `write` ACL) on every registered drive. `GET /api/drives` also
-  self‑heals via `ensureUserProvisioned` (idempotent), and the web UI refetches the drive
-  list on focus/visibility (browsers get no IPC push), so newly shared drives always show.
+- **Opt‑in per‑drive access.** After login, non‑admins see all registered drives but have
+  no drive access by default; they request each drive and an admin approves in the desktop
+  Users tab (or `autoApproveAccessRequests` grants instantly). Approval creates or reuses
+  deterministic `LocalDrive/<home>/` and grants a `write` ACL; `GET /api/drives` only
+  annotates access and never self‑provisions.
+- **Per‑user home + RBAC.** Non‑admins are ACL‑gated and confined to `LocalDrive/<home>/`
+  for drives they were granted. Admins implicitly access every drive; the web UI offers an
+  `ld_view` cookie toggle (`admin` whole share by default, `user` = own space only) that
+  can only restrict admins. WebDAV stays whole‑share for admins. Enforce with
+  `hasPermission` / `driveScope` for **both** the web API and WebDAV.
 - **Pending accounts cannot authenticate** anywhere — `resolveUser` treats non‑`active`
   users as unauthenticated (web, bearer, and WebDAV Basic).
 - **`.localdrive/` is internal** (tmp/thumbs/trash/versions + `users.json`) and is never

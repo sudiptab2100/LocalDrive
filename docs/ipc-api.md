@@ -30,8 +30,8 @@ preload, and a handler in main — then type‑check (`npm run typecheck:node`).
 | Method | IPC channel | Behavior |
 | --- | --- | --- |
 | `listAll()` | `drives:listAll` | `syncDrives()` → `DriveInfo[]` (all detected) |
-| `register(uuid)` | `drives:register` | `registerDrive` + `provisionDriveForAllUsers` → `syncDrives()` |
-| `addFolder()` | `drives:addFolder` | Native folder picker → `registerFolder` + provision |
+| `register(uuid)` | `drives:register` | `registerDrive` → `syncDrives()`; does not grant user access |
+| `addFolder()` | `drives:addFolder` | Native folder picker → `registerFolder` |
 | `unregister(uuid)` | `drives:unregister` | `unregisterDrive` → `syncDrives()` |
 | `reveal(uuid)` | `drives:reveal` | Open the drive's mount in Finder |
 | `onChange(cb)` | `evt:drivesChanged` (push) | Fires on hot‑plug or registry change |
@@ -40,14 +40,22 @@ preload, and a handler in main — then type‑check (`npm run typecheck:node`).
 | Method | IPC channel | Behavior |
 | --- | --- | --- |
 | `list()` | `users:list` | `UserWithAcls[]` (users + their ACLs) |
-| `create(username,password,role)` | `users:create` | `createUser` + `provisionUserHome` |
+| `create(username,password,role)` | `users:create` | `createUser`; deterministic home, no drive ACL grants |
 | `remove(id)` | `users:delete` | Delete; if the target was pending, emits a registrations event |
-| `approve(id)` | `users:approve` | `approveUser` + provision + event |
+| `approve(id)` | `users:approve` | `approveUser` + registration event; drive access remains opt‑in |
 | `setPassword(id,password)` | `users:setPassword` | Reset password |
 | `setRole(id,role)` | `users:setRole` | `admin` \| `user` |
 | `setAcl(userId,drive,pathPrefix,permission)` | `acl:set` | Upsert an ACL |
 | `removeAcl(id)` | `acl:remove` | Delete an ACL |
 | `onRegistrationsChanged(cb)` | `evt:registrationsChanged` (push) | `{ pending, username }` |
+
+### `ld.access`
+| Method | IPC channel | Behavior |
+| --- | --- | --- |
+| `list()` | `access:list` | `listPendingAccessRequests()` → `AccessRequest[]` |
+| `approve(id)` | `access:approve` | `approveAccessRequest(id)` → grants `write` ACL and creates/reuses the user's drive folder |
+| `deny(id)` | `access:deny` | `denyAccessRequest(id)` → marks denied and revokes the home ACL |
+| `onChange(cb)` | `evt:accessRequestsChanged` (push) | Subscribe to drive access request changes |
 
 ### Top-level
 | Method | IPC channel | Behavior |
@@ -55,7 +63,7 @@ preload, and a handler in main — then type‑check (`npm run typecheck:node`).
 | `dashboard()` | `app:dashboard` | `getDashboard(true)` (admin snapshot) → `DashboardData` |
 | `connect()` | `app:connect` | `{ urls, hostname, qr }` |
 | `config.get()` | `config:get` | `AppConfigView` |
-| `config.set(patch)` | `config:set` | Merge + `saveConfig` → new `AppConfigView` |
+| `config.set(patch)` | `config:set` | Merge + `saveConfig` → new `AppConfigView` (including `autoApproveAccessRequests`) |
 | `revealCert()` | `cert:reveal` | Reveal the root CA file in Finder |
 | `openExternal(url)` | `app:openExternal` | `shell.openExternal` |
 | `platform` | — | `process.platform` (set at preload time) |
@@ -69,13 +77,17 @@ subscriptions above (each returns an unsubscribe function):
   `bus.emit(EVENTS.drivesChanged)`.
 - **`evt:registrationsChanged`** — `{ pending: boolean, username: string }`; drives the
   desktop pending‑approvals badge and a notification when `pending` is true.
+- **`evt:accessRequestsChanged`** — access request change payload; main forwards it to the
+  renderer, refreshes pending counts, and shows "New access request — <user> wants <drive>"
+  notifications for new pending requests.
 
 ## IPC view types (`src/shared/ipc.ts`)
 - **`UserWithAcls`** = `User & { acls: Acl[] }`.
 - **`DashboardData`** = `{ transfers, drives[], server, activity[], usersCount }`.
 - **`ConnectInfo`** = `{ urls, hostname, qr }`.
 - **`AppConfigView`** = the settings subset of `AppConfig` (no `jwtSecret`, no
-  `registeredDriveUuids`).
+  `registeredDriveUuids`), including `autoApproveAccessRequests`.
+- **`AccessRequest`** = pending drive request item shown in the desktop Users tab.
 
 ## Notes
 - The renderer runs with `contextIsolation: true` and `sandbox: false`; `window.ld` is the

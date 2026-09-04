@@ -12,7 +12,7 @@ honest.
 | Add a **custom folder** (not just `/Volumes`) as a drive | ✅ | Desktop only (`drives.addFolder`) |
 | Hot‑plug detect / online‑offline | ✅ | `/Volumes` watcher → `drivesChanged`; WebDAV remounts without restart |
 | Down/up with **no data loss** | ✅ | Atomic writes, WAL checkpoint, socket drain — see [conventions.md](conventions.md) |
-| Per‑user private home on every drive | ✅ | Uniform auto‑provisioning (see below) |
+| Opt‑in per‑drive private spaces | ✅ | Users request each drive; admin approval grants a private `LocalDrive/<home>/` |
 
 ## Access from client devices
 | Feature | Status | Notes |
@@ -38,24 +38,33 @@ honest.
 | **Auto‑approve** registrations toggle | ✅ | `autoApproveRegistrations` in Settings |
 | Roles: admin / user | ✅ | Admins bypass ACLs |
 | Per‑user home **confinement** | ✅ | `driveScope` + `safeResolve` |
-| RBAC ACLs (`read`/`write`/`admin`, path‑prefix) | 🟡 | Engine + endpoints exist; **no desktop UI** grants selective per‑user/per‑drive ACLs yet — provisioning is uniform |
+| RBAC ACLs (`read`/`write`/`admin`, path‑prefix) | ✅ | Drive request/approve UI grants per‑user/per‑drive home ACLs; raw ACL endpoints remain admin‑only |
+| **Auto‑approve** drive access toggle | ✅ | `autoApproveAccessRequests` in the Users tab |
+| Admin web **view mode** | ✅ | Admin view (whole share) ↔ My space via restrict‑only `ld_view` cookie |
 | Self‑signed **HTTPS** with local CA | ✅ | `tls.ts`; `/api/cert` to trust; auto‑reissue leaf |
 | Activity log + transfer stats | ✅ | Dashboard |
 
-### How multi‑drive sharing actually works (important)
-Sharing is **automatic and uniform**, not selective:
-- Registering a drive provisions a private `LocalDrive/<home>/` folder **and** a `write`
-  ACL for **every** active non‑admin user.
-- Creating/approving a user provisions them on **every** registered drive.
-- `backfillHomesAndProvision()` reconciles this at startup, and `GET /api/drives`
-  self‑heals per request via `ensureUserProvisioned()` — so a user is **guaranteed** to
-  see every registered drive even if an earlier provisioning step was missed.
+### How multi-drive sharing actually works (important)
+Sharing is opt‑in per drive:
+- Registering a drive only shares it with the system; it does not grant any non‑admin user
+  access.
+- After login, non‑admins see all registered drives in the switcher, but locked drives show
+  a request‑access panel instead of files. States are `none`, `pending`, `denied`, and
+  `granted`.
+- A request appears in the desktop Users tab's **Drive access requests** card. Approval
+  grants a `write` ACL on the user's deterministic home path and creates or reuses
+  `LocalDrive/<home>/`; denial records the request and revokes that home ACL.
+- The **Auto‑approve drive access requests** switch (`autoApproveAccessRequests`) grants
+  requests immediately, mirroring registration auto‑approval.
+- Deterministic homes (`sanitizeHomeName(username)`) and `.localdrive/users.json` make
+  userspaces portable across Macs: sharing the same physical drive from another PC
+  reconnects the user to the existing folder.
+- Admins implicitly access all drives. In the web UI they can switch between **Admin view**
+  (whole share, default) and **My space** (their own `LocalDrive/<home>/`) via the
+  restrict‑only `ld_view` cookie; WebDAV remains whole‑share for admins.
 - Web clients aren't on the Electron event bus, so the web UI refetches the drive list on
-  focus/visibility (+ a light interval); newly shared drives appear without a reload.
-- There is currently **no UI** to share a specific drive/subfolder with a specific user.
-  The ACL model and `POST /api/users/acls` endpoint support it — wiring a UI is the
-  natural next step. Every non‑admin user sees each drive by its real name with its own
-  space card.
+  focus/visibility (+ a light interval); newly registered drives and access decisions
+  appear without a reload.
 
 ## Roadmap / not‑yet‑wired (scaffolding present)
 | Item | Status | Evidence |
@@ -63,7 +72,7 @@ Sharing is **automatic and uniform**, not selective:
 | Public **share links** | 🗺️ | `shares` table exists in the schema; no route/UI |
 | **Trash** / recycle bin | 🗺️ | `.localdrive/trash/` dir reserved; deletes are permanent today |
 | File **versioning** | 🗺️ | `.localdrive/versions/` dir reserved; not written |
-| Selective ACL management UI | 🗺️ | Backend ready (see above) |
+| Selective arbitrary subfolder ACL management UI | 🗺️ | Home ACL request/approval is wired; arbitrary subfolder ACL UI is not |
 
 > If you implement one of these, move it up the table and update
 > [data-model.md](data-model.md) / [http-api.md](http-api.md) accordingly.

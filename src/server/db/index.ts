@@ -44,6 +44,19 @@ CREATE TABLE IF NOT EXISTS acls (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS access_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  drive_uuid TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at TEXT,
+  decided_by INTEGER,
+  UNIQUE(user_id, drive_uuid),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_access_status ON access_requests(status);
+
 CREATE TABLE IF NOT EXISTS shares (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token TEXT UNIQUE NOT NULL,
@@ -124,6 +137,18 @@ export function getDb(): DB {
     | undefined)?.value
   if (!version) {
     db.prepare("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version','1')").run()
+  }
+
+  // v4: switch from uniform sharing to opt-in per-drive access. Wipe the legacy
+  // auto-granted per-drive ACLs for non-admins exactly once so every user
+  // re-requests access to each drive. Only ACL rows are removed — file data on
+  // the drives is never touched. Guarded by a meta flag so it runs a single time.
+  const resetDone = db.prepare("SELECT value FROM meta WHERE key='access_model_reset'").get() as
+    | { value: string }
+    | undefined
+  if (!resetDone) {
+    db.prepare("DELETE FROM acls WHERE user_id IN (SELECT id FROM users WHERE role != 'admin')").run()
+    db.prepare("INSERT OR REPLACE INTO meta(key,value) VALUES('access_model_reset','1')").run()
   }
   return db
 }

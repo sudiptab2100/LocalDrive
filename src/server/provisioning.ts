@@ -1,34 +1,22 @@
 import { join } from 'path'
 import { existsSync, mkdirSync, writeFileSync, renameSync } from 'fs'
 import { randomBytes } from 'crypto'
-import { getDb } from './db/index.js'
-import {
-  listUsers,
-  getUserById,
-  getUserHome,
-  setAcl,
-  setUserHome,
-  ensureUniqueHome
-} from './auth.js'
-import { sanitizeHomeName } from './util/fs-safe.js'
+import { listUsers, setUserHome, homeNameFor, isHomeTaken, ensureUniqueHome } from './auth.js'
 import { getShareRoot, getDriveAppDir } from './drives/registry.js'
-import type { User } from '../shared/types.js'
 
 /**
- * Per-user home provisioning. Every non-admin user gets a private folder named
- * after them inside each shared drive's LocalDrive/ root, plus an ACL that
- * confines them to it. ACLs are always written (so a user's drive shows up
- * immediately in the web UI), while the physical folder is created best-effort
- * — offline drives are created lazily on first access instead.
+ * Userspace provisioning helpers for the opt-in access model.
+ *
+ * A user gets access to a drive only when an admin approves their request (see
+ * `src/server/access.ts`). At that point the user's private folder —
+ * `LocalDrive/<home>/`, where `<home>` is the deterministic, username-derived
+ * name — is **reused if it already exists** (so a drive shared from another PC
+ * reconnects the user to their existing data) or created if missing. Nothing
+ * here grants access on its own; it only manages folders + the portable
+ * manifest.
  */
 
-function registeredDriveUuids(): string[] {
-  return (getDb().prepare('SELECT uuid FROM drives WHERE registered = 1').all() as {
-    uuid: string
-  }[]).map((r) => r.uuid)
-}
-
-/** Create <drive>/LocalDrive/<home> if the drive is online. Best-effort. */
+/** Create <drive>/LocalDrive/<home> if the drive is online, reusing it if present. */
 export async function ensureUserHomeDir(uuid: string, home: string): Promise<void> {
   if (!home) return
   try {
@@ -40,11 +28,22 @@ export async function ensureUserHomeDir(uuid: string, home: string): Promise<voi
   }
 }
 
+/** Whether a user's folder already exists on a drive (best-effort; false when offline). */
+export async function userSpaceExists(uuid: string, home: string): Promise<boolean> {
+  if (!home) return false
+  try {
+    const root = await getShareRoot(uuid)
+    return existsSync(join(root, home))
+  } catch {
+    return false
+  }
+}
+
 /**
  * Write a portable, secret-free user manifest to <drive>/.localdrive/users.json
  * so basic account info travels with the drive. Never contains password hashes.
  */
-async function writeUsersManifest(uuid: string): Promise<void> {
+export async function writeUsersManifest(uuid: string): Promise<void> {
   try {
     const appDir = await getDriveAppDir(uuid)
     if (!existsSync(appDir)) mkdirSync(appDir, { recursive: true })
@@ -60,75 +59,23 @@ async function writeUsersManifest(uuid: string): Promise<void> {
   }
 }
 
-/** Provision one user's home + ACL on every registered drive. */
-export async function provisionUserHome(user: User): Promise<void> {
-  if (user.role === 'admin' || !user.home) return
-  const uuids = registeredDriveUuids()
-  for (const uuid of uuids) {
-    setAcl(user.id, uuid, user.home, 'write')
-    await ensureUserHomeDir(uuid, user.home)
-  }
-  for (const uuid of uuids) await writeUsersManifest(uuid)
-}
-
 /**
- * Idempotent self-heal for a single user: ensure they have a home ACL on every
- * registered drive, filling only the gaps. Cheap on the common path (no writes
- * when already fully provisioned), so it is safe to call on every drive listing.
- * Guarantees a user always sees every shared drive, even if an earlier
- * provisioning step was missed (e.g. a drive registered while the user was
- * temporarily unknown, or legacy data from an older build).
+ * Startup reconcile: give every non-admin user a deterministic, username-based
+ * home folder name (the portability key). Legacy users missing a home get one;
+ * legacy suffixed homes are normalized to the deterministic name when it is
+ * free. This never grants drive access and never moves on-disk data — access is
+ * always opt-in via an admin-approved request.
  */
-export async function ensureUserProvisioned(user: User): Promise<boolean> {
-  if (user.role === 'admin' || !user.home) return false
-  let healed = false
-  for (const uuid of registeredDriveUuids()) {
-    if (getUserHome(user, uuid) == null) {
-      setAcl(user.id, uuid, user.home, 'write')
-      await ensureUserHomeDir(uuid, user.home)
-      healed = true
+export async function backfillHomes(): Promise<void> {
+  for (const u of listUsers()) {
+    if (u.role === 'admin') continue
+    const desired = homeNameFor(u.username)
+    if (!u.home) {
+      // Assign a home; fall back to a unique suffix only if the deterministic
+      // name is already claimed by a different legacy user.
+      setUserHome(u.id, isHomeTaken(desired, u.id) ? ensureUniqueHome(desired, u.id) : desired)
+    } else if (u.home !== desired && !isHomeTaken(desired, u.id)) {
+      setUserHome(u.id, desired)
     }
   }
-  return healed
-}
-
-/** Provision every non-admin, active user's home on a newly-registered drive. */
-export async function provisionDriveForAllUsers(uuid: string): Promise<void> {
-  for (const u of listUsers()) {
-    if (u.role === 'admin' || u.status !== 'active' || !u.home) continue
-    setAcl(u.id, uuid, u.home, 'write')
-    await ensureUserHomeDir(uuid, u.home)
-  }
-  await writeUsersManifest(uuid)
-}
-
-/**
- * Startup reconcile: assign a home to any legacy user missing one, provision
- * every non-admin user on every registered drive, and remove any leftover
- * whole-drive grants so existing users are confined to their home.
- */
-export async function backfillHomesAndProvision(): Promise<void> {
-  const db = getDb()
-
-  for (const u of listUsers()) {
-    if (u.role === 'admin' || u.status !== 'active' || u.home) continue
-    setUserHome(u.id, ensureUniqueHome(sanitizeHomeName(u.username), u.id))
-  }
-
-  const uuids = registeredDriveUuids()
-  for (const u0 of listUsers()) {
-    if (u0.role === 'admin' || u0.status !== 'active') continue
-    const u = getUserById(u0.id)
-    if (!u || !u.home) continue
-    for (const uuid of uuids) {
-      setAcl(u.id, uuid, u.home, 'write')
-      await ensureUserHomeDir(uuid, u.home)
-      db.prepare("DELETE FROM acls WHERE user_id = ? AND drive_uuid = ? AND path_prefix = ''").run(
-        u.id,
-        uuid
-      )
-    }
-  }
-
-  for (const uuid of uuids) await writeUsersManifest(uuid)
 }

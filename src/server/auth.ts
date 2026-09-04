@@ -49,6 +49,33 @@ export function ensureUniqueHome(base: string, excludeUserId?: number): string {
   return `${base}-${Date.now()}`
 }
 
+/**
+ * Deterministic userspace folder name for a username. This is the portability
+ * key: the same username maps to the same folder on any serving PC, so a user's
+ * space travels with the drive. No per-PC uniqueness suffix — collisions are
+ * rejected at account creation instead (see `isHomeTaken`).
+ */
+export function homeNameFor(username: string): string {
+  return sanitizeHomeName(username)
+}
+
+/** Whether a userspace folder name is already claimed by another user. */
+export function isHomeTaken(home: string, excludeUserId?: number): boolean {
+  if (!home) return false
+  const db = getDb()
+  const row = excludeUserId
+    ? db.prepare('SELECT 1 FROM users WHERE home = ? AND id <> ?').get(home, excludeUserId)
+    : db.prepare('SELECT 1 FROM users WHERE home = ?').get(home)
+  if (row) return true
+  // Admins store home='' (whole-share sentinel) but use their username-derived
+  // name as their personal space in "My space" view, so reserve those too.
+  const admins = db.prepare("SELECT id, username FROM users WHERE role = 'admin'").all() as {
+    id: number
+    username: string
+  }[]
+  return admins.some((a) => a.id !== excludeUserId && sanitizeHomeName(a.username) === home)
+}
+
 export function createUser(
   username: string,
   password: string,
@@ -57,7 +84,12 @@ export function createUser(
 ): User {
   const db = getDb()
   const uname = username.trim()
-  const home = role === 'admin' ? '' : ensureUniqueHome(sanitizeHomeName(uname))
+  const home = role === 'admin' ? '' : homeNameFor(uname)
+  // Reject a username whose deterministic folder name collides with an existing
+  // user — the folder name must stay a stable, unique portability key.
+  if (home && isHomeTaken(home)) {
+    throw new Error('That username is too similar to an existing account. Please choose another.')
+  }
   const info = db
     .prepare('INSERT INTO users (username, password_hash, role, home, status) VALUES (?,?,?,?,?)')
     .run(uname, hashPassword(password), role, home, status)

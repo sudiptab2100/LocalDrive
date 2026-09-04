@@ -3,6 +3,7 @@ import type {
   DriveInfo,
   User,
   Acl,
+  AccessRequest,
   Permission,
   Role,
   ActivityRecord
@@ -28,6 +29,9 @@ export const IPC = {
   userSetRole: 'users:setRole',
   aclSet: 'acl:set',
   aclRemove: 'acl:remove',
+  accessReqList: 'access:list',
+  accessReqApprove: 'access:approve',
+  accessReqDeny: 'access:deny',
   dashboard: 'app:dashboard',
   connectInfo: 'app:connect',
   configGet: 'config:get',
@@ -37,7 +41,8 @@ export const IPC = {
   // main -> renderer push events
   evtStatus: 'evt:status',
   evtDrivesChanged: 'evt:drivesChanged',
-  evtRegistrationsChanged: 'evt:registrationsChanged'
+  evtRegistrationsChanged: 'evt:registrationsChanged',
+  evtAccessRequestsChanged: 'evt:accessRequestsChanged'
 } as const
 
 export interface UserWithAcls extends User {
@@ -67,6 +72,7 @@ export interface AppConfigView {
   httpsPort: number
   registrationEnabled: boolean
   autoApproveRegistrations: boolean
+  autoApproveAccessRequests: boolean
 }
 
 /** Surface exposed on `window.ld` in the renderer via the preload bridge. */
@@ -97,6 +103,12 @@ export interface LocalDriveApi {
     setAcl(userId: number, drive: string, pathPrefix: string, permission: Permission): Promise<void>
     removeAcl(id: number): Promise<void>
     onRegistrationsChanged(cb: (info: { pending: boolean; username: string }) => void): () => void
+  }
+  access: {
+    list(): Promise<AccessRequest[]>
+    approve(id: number): Promise<void>
+    deny(id: number): Promise<void>
+    onChange(cb: (info: { pending: boolean; username: string; drive?: string }) => void): () => void
   }
   dashboard(): Promise<DashboardData>
   connect(): Promise<ConnectInfo>

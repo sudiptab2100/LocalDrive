@@ -50,6 +50,23 @@ flushed to the main DB file via `checkpoint()` on every server stop.
 `(id, user_id→users, drive_uuid, path_prefix, permission)` with
 `UNIQUE(user_id, drive_uuid, path_prefix)` and `ON DELETE CASCADE`.
 `path_prefix = ''` means the whole drive; `permission ∈ {read, write, admin}`.
+For non‑admins, a `write` ACL on their deterministic home path is the source of truth for
+approved drive access.
+
+### `access_requests` — per-drive access workflow
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | INTEGER PK | |
+| `user_id` | INTEGER FK → `users(id)` | `ON DELETE CASCADE` |
+| `drive_uuid` | TEXT | registered drive being requested |
+| `status` | TEXT | `pending` \| `approved` \| `denied`, default `pending` |
+| `requested_at` | TEXT | request timestamp |
+| `decided_at` | TEXT | approval/denial timestamp, nullable |
+| `decided_by` | INTEGER | admin user id, nullable |
+
+Constraints/indexes: `UNIQUE(user_id, drive_uuid)` and `idx_access_status`. This table is
+the source of truth for `pending` and `denied`; granted/approved access is determined by
+the user's home ACL on that drive.
 
 ### `shares` — public share links *(schema present; API not yet wired — see features.md)*
 `(id, token UNIQUE, drive_uuid, path, permission, password_hash, expires_at, created_by,
@@ -75,12 +92,16 @@ Known keys: `bytes_in`, `bytes_out`, `uploads`, `downloads`.
   folders are browsed. `.localdrive` is never indexed.
 
 ### `meta`
-`(key PRIMARY KEY, value)` — holds `schema_version`.
+`(key PRIMARY KEY, value)` — holds `schema_version` and one‑off migration flags such as
+`access_model_reset`.
 
 ### Migrations
 Additive and idempotent, run in `getDb()`: add `users.home` (v2), add `users.status` +
-the case‑insensitive username index (v3). New migrations should follow the same pattern
-(guard with `PRAGMA table_info` / `IF NOT EXISTS`, never destructive).
+the case‑insensitive username index (v3), create `access_requests`, and run the one‑time
+access reset guarded by `meta.access_model_reset`. The reset deletes non‑admin ACL rows so
+users re‑request drive access under the opt‑in model; it never touches file data and runs
+before `backfillHomes()`. New migrations should follow the same pattern (guard with
+`PRAGMA table_info` / `IF NOT EXISTS` or `meta` flags; avoid destructive file changes).
 
 ## Config file (`src/server/config.ts`)
 `config.json` is the persisted `AppConfig`. Loaded with `loadConfig()` (fills defaults,
@@ -99,16 +120,19 @@ generates + persists `jwtSecret` on first run) and written atomically via `saveC
 | `httpsPort` | `4843` | HTTPS port when enabled |
 | `registrationEnabled` | `true` | allow self‑registration from the web login |
 | `autoApproveRegistrations` | `false` | activate self‑registrations immediately |
+| `autoApproveAccessRequests` | `false` | grant drive access requests immediately |
 
 `AppConfigView` (in `shared/ipc.ts`) is the subset exposed to the desktop Settings UI
-(everything except `jwtSecret`/`registeredDriveUuids`).
+(everything except `jwtSecret`/`registeredDriveUuids`) and includes
+`autoApproveAccessRequests` for the Users tab's Drive access card.
 
 ## On-disk drive layout
-When a drive is registered (`ensureDriveLayout*`), this structure is created on it:
+When a drive is registered (`ensureDriveLayout*`), the share root and app data dirs are
+created; per‑user homes are created or reused when access is granted:
 ```
 <mount>/
   LocalDrive/                 ← share root (config.shareRootName)
-    <home>/                   ← one private folder per non‑admin user
+    <home>/                   ← private folder for each approved user/admin My space
   .localdrive/                ← hidden app data, never listed/served/indexed
     tmp/                      ← same‑filesystem staging for atomic finalizes
     thumbs/                   ← cached WebP thumbnails (sha1 of path:mtime:size)
@@ -123,10 +147,20 @@ password hashes.
 - **Drive identity** is the stable `uuid` (survives remount/rename). Custom folders use a
   `folder:<sha1(path)>` UUID and are dropped from the registry on unregister (physical
   volumes keep a `registered=0` row).
-- **User identity** for files is the `home` folder name (`sanitizeHomeName(username)`,
-  unique via `-2`, `-3`, … suffixes). Non‑admins are confined to `LocalDrive/<home>/`;
-  admins have `home = ''` (whole share). See [security-rbac.md](security-rbac.md).
+- **User identity** for files is the deterministic `home` folder name
+  (`homeNameFor(username) = sanitizeHomeName(username)`). New users are rejected on
+  sanitized home collision; `-2`/`-3` suffixing is only a legacy backfill fallback.
+  Non‑admins are confined to `LocalDrive/<home>/` only on drives where a home ACL grants
+  access; admins have implicit access everywhere and `home = ''` for whole‑share mode.
+  See [security-rbac.md](security-rbac.md).
 
 ## Related
 - Access control & scoping: [security-rbac.md](security-rbac.md)
 - Where these are read/written: [http-api.md](http-api.md), [architecture.md](architecture.md)
+
+## Shared contract notes
+- `DriveInfo.access?: 'granted' | 'pending' | 'denied' | 'none'` annotates registered drives
+  returned to authenticated web clients. Admins are always `granted`; non‑admins are
+  `granted` only when their home ACL exists.
+- `AccessRequest` is `{ id, userId, username, driveUuid, driveLabel, requestedAt,
+  existingSpace? }` and is used by the desktop Users tab for pending drive approvals.

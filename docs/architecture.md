@@ -72,8 +72,8 @@ of open sockets.
 **Start** (`start()`):
 1. `loadConfig()` + `getDb()` (ensures schema/migrations).
 2. `syncDrives()` — reconcile detected volumes with the persisted registry.
-3. `backfillHomesAndProvision()` — assign homes to any legacy user, provision every
-   active non‑admin user on every registered drive, and strip stale whole‑drive grants.
+3. `backfillHomes()` — assign/normalize deterministic homes for legacy users and write
+   portable manifests without granting ACLs or moving data.
 4. `rebuildWebdav()` — build a WebDAV handler for the currently online registered drives.
 5. Listen on `config.host:config.port`. If `httpsEnabled`, also load TLS material and
    listen on `httpsPort` (**degrades to HTTP‑only** if cert generation fails).
@@ -92,11 +92,15 @@ runs once).
 the WebDAV mounts on the fly (no restart needed to add/remove a drive).
 
 ## Event bus (`src/server/events.ts`)
-A tiny `EventEmitter` (`bus`) with two events:
+A tiny `EventEmitter` (`bus`) with these events:
 - `drivesChanged` → ServerManager rebuilds WebDAV; main forwards to the renderer
   (`evt:drivesChanged`) to refresh the Drives tab.
 - `registrationsChanged` → main forwards to the renderer (`evt:registrationsChanged`),
-  updates the pending‑approvals badge, and shows a desktop notification for new requests.
+  updates the pending‑approvals badge, and shows a desktop notification for new account
+  requests.
+- `accessRequestsChanged` → main forwards to the renderer (`evt:accessRequestsChanged`),
+  updates the Users tab badge, and shows "New access request — <user> wants <drive>" for
+  new drive access requests.
 
 ## Standalone server mode (`src/server/standalone.ts`)
 `npm run server:dev` runs the server with **no Electron** (via `tsx watch`). It bootstraps
@@ -114,8 +118,14 @@ graceful shutdown. Honors `LOCALDRIVE_HOME` (isolated config/data — used for t
   `onUploadCreate`, then `onUploadFinish` calls `finalizeUpload` which `moveAtomic`s it
   onto the drive. See [http-api.md](http-api.md#uploads-tus).
 - **Desktop shares a drive:** renderer `window.ld.drives.register(uuid)` → IPC →
-  `registerDrive` + `provisionDriveForAllUsers` → `bus.emit(drivesChanged)` → WebDAV
-  rebuilds and both UIs refresh.
+  `registerDrive` → `bus.emit(drivesChanged)` → WebDAV rebuilds and both UIs refresh.
+  Non‑admins then request the drive individually.
+- **User requests drive access:** PWA `api.requestAccess(uuid)` →
+  `POST /api/drives/request-access` → `requestAccess` records `access_requests` (or grants
+  immediately if `autoApproveAccessRequests`) → `bus.emit(accessRequestsChanged)` → main
+  notifies/refreshes the desktop Users tab. Admin approval calls `approveAccessRequest` /
+  `grantDriveAccess`, creating or reusing `LocalDrive/<home>/`, writing `users.json`, and
+  granting the user's home `write` ACL.
 
 ## Related
 - Module‑by‑module detail: [project-structure.md](project-structure.md)

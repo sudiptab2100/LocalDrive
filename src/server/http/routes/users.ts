@@ -12,7 +12,6 @@ import {
   approveUser
 } from '../../auth.js'
 import { requireAdmin } from '../middleware.js'
-import { provisionUserHome } from '../../provisioning.js'
 import { bus, EVENTS } from '../../events.js'
 import { logActivity } from '../../db/index.js'
 import type { Permission, Role } from '../../../shared/types.js'
@@ -34,7 +33,6 @@ usersRouter.post('/', async (req, res) => {
   if (!username || !password) return res.status(400).json({ error: 'Missing fields' })
   try {
     const user = createUser(String(username), String(password), (role as Role) || 'user')
-    await provisionUserHome(user)
     logActivity('user_create', { userId: req.user!.id, detail: user.username })
     res.json({ user })
   } catch (e) {
@@ -62,7 +60,6 @@ usersRouter.post('/:id/approve', async (req, res) => {
   if (!user) return res.status(404).json({ error: 'No such user' })
   if (user.status === 'active') return res.json({ user })
   const approved = approveUser(id)!
-  await provisionUserHome(approved)
   logActivity('user_approve', { userId: req.user!.id, detail: approved.username })
   bus.emit(EVENTS.registrationsChanged, { pending: false, username: approved.username })
   res.json({ user: approved })

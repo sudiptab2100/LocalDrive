@@ -11,19 +11,24 @@ Domain terms used across LocalDrive's code and docs.
   than a whole volume. Its `uuid` is derived as `folder:<hash>`.
 - **Share root / `shareRootName`** — the top‑level folder LocalDrive creates on each drive
   to hold user data. Default name **`LocalDrive`** (`<mount>/LocalDrive/`).
-- **Home** — a user's private subfolder under the share root on a given drive:
-  `<mount>/LocalDrive/<home>/`. `getUserHome(user, driveUuid)` resolves it.
+- **Userspace / home** — a user's deterministic private subfolder under the share root on
+  a given drive: `<mount>/LocalDrive/<home>/`, where `homeNameFor(username) =
+  sanitizeHomeName(username)`. New users are rejected if the sanitized name collides; the
+  stable name and `.localdrive/users.json` make the space portable across Macs.
 - **Confinement** — restricting a non‑admin user so every path they request is forced
   inside their home. Implemented by **`driveScope`** (`scopeIn`/`scopeOut` translate
   between home‑relative client paths and full drive paths) plus **`safeResolve`** /
   **`resolveInDrive`**, which reject traversal (`..`) escapes.
 - **Home‑relative path** — the path a client sends/sees (`''` = their root). The server
   maps it to a real filesystem path and strips the home prefix on responses. Admins
-  operate on the whole share, so their scope is the drive root.
-- **Provisioning** — creating a user's home folder and baseline `write` **ACL** on a
-  drive. It's **uniform**: every active non‑admin gets provisioned on every registered
-  drive (`provisionDriveForAllUsers`, `provisionUserHome`,
-  `backfillHomesAndProvision`).
+  operate on the whole share in Admin view and their own userspace in My space.
+- **Access request** — a non‑admin's opt‑in request for one registered drive. Pending or
+  denied state lives in `access_requests`; approval grants a `write` ACL on the user's
+  userspace and creates or reuses the folder.
+- **Provisioning** — current provisioning is limited to deterministic home folder
+  reuse/creation (`ensureUserHomeDir`), portable manifest writes, and startup
+  `backfillHomes()` normalization. Granting access is done by the access request approval
+  flow, not by drive registration or user creation.
 - **ACL (access control list)** — a row `(user, drive, path_prefix, permission)` granting
   a **permission** at/under a path prefix.
 - **Permission** — one of `read` < `write` < `admin` (ranked). **`effectivePermission`**
@@ -31,6 +36,11 @@ Domain terms used across LocalDrive's code and docs.
   admins are `admin` everywhere.
 - **Role** — account‑level `admin` or `user`. Admins bypass ACLs and see management APIs;
   `user` accounts are confined and ACL‑checked.
+- **View mode / `ld_view` cookie** — web‑UI admin scope toggle. `admin` (or absent) means
+  whole share; `user` means the admin's own userspace. Non‑admins are always ACL‑gated, so
+  the cookie can only restrict an admin and never elevates access. WebDAV has no toggle.
+- **Auto‑approve access** — `autoApproveAccessRequests`; when enabled, drive access
+  requests are granted immediately instead of waiting in the desktop Users tab.
 - **Pending / active (status)** — a self‑registered account starts **pending** and is
   blocked from all auth until an admin **approves** it (or `autoApproveRegistrations` is
   on), at which point it becomes **active**.

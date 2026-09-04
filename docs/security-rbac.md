@@ -30,12 +30,17 @@ Admins have `home = ''` and implicit `admin` permission everywhere.
 - `POST /api/auth/register` (gated by `config.registrationEnabled`):
   - Validates: username ≥ 3 chars and sanitizes to a non‑empty home; password ≥ 6 chars;
     case‑insensitive duplicate check.
-  - If `autoApproveRegistrations`: create an **active** user, provision homes, sign them in
-    (set cookie), emit `registrationsChanged{pending:false}`.
-  - Else: create a **pending** user (no home/ACL yet), emit
+  - If `autoApproveRegistrations`: create an **active** user, sign them in (set cookie),
+    emit `registrationsChanged{pending:false}`. They still have no non‑admin drive access
+    until requesting a drive (unless drive access auto‑approval grants it).
+  - Else: create a **pending** user (no drive ACL yet), emit
     `registrationsChanged{pending:true}` → the desktop app shows a notification + badge.
 - Admin approves from the desktop Users tab (or `POST /api/users/:id/approve`), which flips
-  status to `active` and runs `provisionUserHome`.
+  status to `active`. Drive access remains opt‑in per drive.
+- User home names are deterministic: `homeNameFor(username) = sanitizeHomeName(username)`.
+  `createUser` rejects sanitized home collisions (`isHomeTaken`) so registration returns
+  `409` instead of silently suffixing; suffixing is retained only as a legacy backfill
+  fallback.
 
 ## RBAC — ACLs & effective permission (`src/server/auth.ts`)
 - Permissions rank: `read (1) < write (2) < admin (3)`.
@@ -51,7 +56,13 @@ Admins have `home = ''` and implicit `admin` permission everywhere.
 ## Per-user home & confinement (`http/scope.ts`, `util/fs-safe.ts`)
 This is why a normal user "sees their own files as the drive root":
 - **`getUserHome(user, drive)`** → `''` for admins; the user's `home` folder if they have
-  an ACL for it on that drive; otherwise `null` (no access → drive hidden).
+  an ACL for it on that drive; otherwise `null` (no granted access).
+- **Admin web view mode**: `viewModeFor(req, user)` reads the lightweight `ld_view` cookie
+  (`admin` \| `user`; absent = `admin`). Admin + admin mode scopes to the whole share
+  (`home=''`); admin + user mode scopes to `homeNameFor(username)` and ensures that folder.
+  Non‑admins are always effectively user mode and ACL‑gated, so the cookie can only
+  restrict an admin and can never widen a non‑admin's access. WebDAV has no toggle:
+  admins stay whole‑share.
 - **`driveScope(req, drive)`** → `null` if no access, else `{ home, in(clientPath),
   out(fullPath) }`:
   - **`in`** = `scopeIn(home, p)`: prefixes `home`, normalizes, returns `null` on `../`
@@ -67,16 +78,32 @@ This is why a normal user "sees their own files as the drive root":
 handlers additionally block operating on the home root itself (e.g. you can't rename or
 delete your own home folder: `full === scope.home` is rejected).
 
-### Provisioning (`src/server/provisioning.ts`)
-Sharing is **uniform**: registering a drive gives **every active non‑admin user** a
-`write` ACL on their `home` + a physical `LocalDrive/<home>/` folder; creating/approving a
-user provisions them on **every** registered drive. `backfillHomesAndProvision()` runs at
-server start to reconcile (assign missing homes, provision, and strip stale whole‑drive
-grants), and `ensureUserProvisioned(user)` re‑reconciles the caller on every
-`GET /api/drives` (idempotent; fills only missing per‑drive ACLs) — guaranteeing a user
-always sees every registered drive. There is currently **no UI to grant a specific
-drive/subfolder to a specific user** even though `setAcl` / `POST /api/users/acls` support
-it — see [features.md](features.md).
+### Opt-in drive access (`src/server/access.ts`, `src/server/provisioning.ts`)
+Drive access for non‑admins is explicit and per drive:
+- `GET /api/drives` returns all registered drives but only annotates each with
+  `access: 'granted' | 'pending' | 'denied' | 'none'`; it does not create folders or ACLs.
+- A non‑admin calls `POST /api/drives/request-access` for one drive. `requestAccess()`
+  creates/updates an `access_requests` row and emits `accessRequestsChanged`; if
+  `config.autoApproveAccessRequests` is true, it grants immediately instead.
+- Pending/denied decisions live in `access_requests`. A granted home ACL is the source of
+  truth for approved access.
+- Admin approval (`approveAccessRequest`) calls `grantDriveAccess`: add a `write` ACL on
+  the user's home path, create or reuse `LocalDrive/<home>/` via `ensureUserHomeDir`,
+  write the portable `.localdrive/users.json` manifest, mark the request approved, and
+  emit `accessRequestsChanged`. Denial records `denied` and revokes the home ACL.
+- `listPendingAccessRequests()` feeds the desktop Users tab and includes an `existingSpace`
+  hint when the deterministic folder already exists on that registered drive.
+
+`ensureUserHomeDir(uuid, home)` is reuse‑or‑create only; it never grants access by itself.
+`backfillHomes()` runs at startup to assign/normalize deterministic homes, write manifests,
+and avoid data moves or new ACL grants. Cross‑PC portability depends on the stable home
+name and `.localdrive/users.json`: a physical drive shared from another Mac reconnects the
+same username to the existing folder.
+
+A one‑time reset migration in `getDb()` is guarded by `meta.access_model_reset`: on first
+run of the new access model it deletes all ACLs for non‑admin users so everyone starts from
+a clean slate and re‑requests drive access. It never touches file data and runs before
+`backfillHomes()`.
 
 ## WebDAV specifics (`src/server/webdav.ts`)
 - Each registered online drive is mounted at a stable, slugified URL segment shared by all

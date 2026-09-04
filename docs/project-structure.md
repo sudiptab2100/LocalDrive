@@ -42,10 +42,12 @@ build/                    App icon + tray template images (packaged as resources
 ## `src/renderer` — desktop control center
 - **`main.tsx`** — React entry; wraps `<App/>` in `ToastProvider`.
 - **`App.tsx`** — top bar (server status + Start/Stop/Restart), first‑run bootstrap banner,
-  tabs (`Dashboard`, `Drives`, `Users`, `Connect`, `Settings`) with a pending‑approvals
-  badge; subscribes to `window.ld` status/drives/registration events.
+  tabs (`Dashboard`, `Drives`, `Users`, `Connect`, `Settings`) with a pending badge that
+  includes account and drive access requests; subscribes to `window.ld`
+  status/drives/registration/access events.
 - **`components.tsx`** — the tab panels: `DrivesPanel`, `DashboardPanel`, `UsersPanel`
-  (+ `UserRow`, `AddUserModal`, `ResetPasswordModal`), `ConnectPanel`, `SettingsPanel`.
+  (+ `UserRow`, `AddUserModal`, `ResetPasswordModal`, drive access request cards),
+  `ConnectPanel`, `SettingsPanel`.
 - **`ui.tsx`** — reusable primitives: `ToastProvider`/`useToast`, `Modal`, `ConfirmDialog`,
   `Switch`, `Avatar`, `Menu`, `PasswordInput`.
 - **`util.ts`**, **`global.d.ts`** — helpers and the `window.ld` type declaration.
@@ -53,11 +55,12 @@ build/                    App icon + tray template images (packaged as resources
 ## `src/webui` — client PWA (served to browsers)
 - **`index.html`**, **`public/`** — HTML shell + icons/manifest assets.
 - **`src/main.tsx`** — React entry; imports `./styles.css` (only).
-- **`src/App.tsx`** — the entire client app: login/register screen, drive switcher, file
-  list/grid, breadcrumb, selection + bulk actions, search modal, preview modal, styled
-  prompt/confirm dialogs, and the custom `UploadModal` (Uppy core + tus). Inline SVG icons.
-- **`src/api.ts`** — typed `fetch` client for `/api/*` (`credentials: 'include'`), plus
-  `fileUrl`/`zipUrl` helpers and response types.
+- **`src/App.tsx`** — the entire client app: login/register screen, drive switcher with
+  locked non‑granted drives, request‑access panel, admin view toggle, file list/grid,
+  breadcrumb, selection + bulk actions, search modal, preview modal, styled prompt/confirm
+  dialogs, and the custom `UploadModal` (Uppy core + tus). Inline SVG icons.
+- **`src/api.ts`** — typed `fetch` client for `/api/*` (`credentials: 'include'`), including
+  `requestAccess`, plus `fileUrl`/`zipUrl` helpers and response types.
 - **`src/utils.ts`** — `formatBytes`, `formatDate`, `parentPath`, `joinPath`, `iconFor`,
   `isTextLike`.
 - **`src/styles.css`** — design tokens + all component/responsive styles.
@@ -77,16 +80,19 @@ HTTP layer (`server/http/`):
 - **`app.ts`** — `createApp()` (middleware/router wiring; `setWebdavHandler`).
 - **`middleware.ts`** — `attachUser`, `resolveUser(Raw)`, `requireAuth`, `requireAdmin`,
   `requirePermission`; the `ld_token` cookie name.
-- **`scope.ts`** — `driveScope(req, driveUuid)` → `{ home, in(), out() }` confinement.
+- **`scope.ts`** — `driveScope(req, driveUuid)` → `{ home, in(), out() }` confinement,
+  including admin web view mode from the restrict‑only `ld_view` cookie.
 - **`routes/`** — `auth.ts`, `drives.ts`, `files.ts`, `uploads.ts` (tus), `search.ts`,
   `stats.ts`, `users.ts`.
 
 Auth / users / access:
 - **`auth.ts`** — bcrypt hashing, JWT sign/verify, user CRUD, `createPendingUser`/
-  `approveUser`, RBAC (`setAcl`/`effectivePermission`/`hasPermission`), `getUserHome`,
-  `bootstrapAdmin`.
-- **`provisioning.ts`** — per‑user home + ACL provisioning across drives, `users.json`
-  manifest, `backfillHomesAndProvision` (startup reconcile).
+  `approveUser`, deterministic `homeNameFor`, home collision checks, RBAC
+  (`setAcl`/`effectivePermission`/`hasPermission`), `getUserHome`, `bootstrapAdmin`.
+- **`access.ts`** — opt‑in per‑drive access workflow: access maps, request/approve/deny,
+  auto‑approval, pending counts, home ACL grant/revoke, and request change events.
+- **`provisioning.ts`** — deterministic home folder reuse/creation, `userSpaceExists`,
+  `users.json` manifest, `backfillHomes` startup normalization (no ACL grants).
 
 Drives:
 - **`drives/detect.ts`** — enumerate `/Volumes`, `diskutil info -plist` per volume, stable
@@ -114,8 +120,8 @@ Networking / security / misc:
 
 ## `src/shared` — cross-process contracts
 - **`types.ts`** — domain types: `Role`, `Permission`, `UserStatus`, `User`, `DriveInfo`,
-  `FileEntry`, `Acl`, `ServerStatus`, `TransferStat`, `ActivityRecord`, `AuthResult`,
-  `RegisterResult`.
+  `AccessRequest`, `FileEntry`, `Acl`, `ServerStatus`, `TransferStat`, `ActivityRecord`,
+  `AuthResult`, `RegisterResult`.
 - **`ipc.ts`** — the `IPC` channel‑name map, `LocalDriveApi` (the `window.ld` shape), and
   IPC view types (`UserWithAcls`, `DashboardData`, `ConnectInfo`, `AppConfigView`).
 

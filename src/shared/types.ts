@@ -30,6 +30,8 @@ export interface DriveInfo {
   online: boolean
   /** Whether the user registered this drive for sharing. */
   registered: boolean
+  /** The caller's access state for this drive (opt-in model). Admins: 'granted'. */
+  access?: 'granted' | 'pending' | 'denied' | 'none'
   /** External/removable vs internal. */
   external: boolean
   /** True when this is a user-picked folder rather than a physical volume. */
@@ -59,6 +61,18 @@ export interface Acl {
   /** Path prefix within the drive this rule applies to ("" = whole drive). */
   pathPrefix: string
   permission: Permission
+}
+
+/** A user's pending request for access to a specific drive (opt-in model). */
+export interface AccessRequest {
+  id: number
+  userId: number
+  username: string
+  driveUuid: string
+  driveLabel: string
+  requestedAt: string
+  /** True when the user's folder already exists on the drive (best-effort). */
+  existingSpace?: boolean
 }
 
 export interface ServerStatus {

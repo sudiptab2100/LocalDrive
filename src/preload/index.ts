@@ -46,6 +46,16 @@ const api: LocalDriveApi = {
       return () => ipcRenderer.removeListener(IPC.evtRegistrationsChanged, h)
     }
   },
+  access: {
+    list: () => ipcRenderer.invoke(IPC.accessReqList),
+    approve: (id: number) => ipcRenderer.invoke(IPC.accessReqApprove, id),
+    deny: (id: number) => ipcRenderer.invoke(IPC.accessReqDeny, id),
+    onChange: (cb) => {
+      const h = (_e: unknown, info: any): void => cb(info)
+      ipcRenderer.on(IPC.evtAccessRequestsChanged, h)
+      return () => ipcRenderer.removeListener(IPC.evtAccessRequestsChanged, h)
+    }
+  },
   dashboard: () => ipcRenderer.invoke(IPC.dashboard),
   connect: () => ipcRenderer.invoke(IPC.connectInfo),
   config: {

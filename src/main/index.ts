@@ -19,8 +19,12 @@ import {
   setAcl,
   removeAcl
 } from '../server/auth.js'
-import { provisionUserHome, provisionDriveForAllUsers } from '../server/provisioning.js'
 import { getDashboard } from '../server/dashboard.js'
+import {
+  listPendingAccessRequests,
+  approveAccessRequest,
+  denyAccessRequest
+} from '../server/access.js'
 import { qrDataUrl } from '../server/discovery.js'
 import { pickQrUrl } from '../server/util/net.js'
 import { getStatus } from '../server/status.js'
@@ -223,7 +227,6 @@ function registerIpc(): void {
   ipcMain.handle(IPC.drivesListAll, () => syncDrives())
   ipcMain.handle(IPC.driveRegister, async (_e, uuid: string) => {
     await registerDrive(uuid)
-    await provisionDriveForAllUsers(uuid)
     return syncDrives()
   })
   ipcMain.handle(IPC.driveAddFolder, async () => {
@@ -236,8 +239,7 @@ function registerIpc(): void {
       ? await dialog.showOpenDialog(mainWindow, opts)
       : await dialog.showOpenDialog(opts)
     if (res.canceled || res.filePaths.length === 0) return syncDrives()
-    const drive = await registerFolder(res.filePaths[0])
-    await provisionDriveForAllUsers(drive.uuid)
+    await registerFolder(res.filePaths[0])
     return syncDrives()
   })
   ipcMain.handle(IPC.driveUnregister, async (_e, uuid: string) => {
@@ -254,9 +256,7 @@ function registerIpc(): void {
     return listUsers().map((u) => ({ ...u, acls: acls.filter((a) => a.userId === u.id) }))
   })
   ipcMain.handle(IPC.userCreate, async (_e, p: { username: string; password: string; role: Role }) => {
-    const user = createUser(p.username, p.password, p.role)
-    await provisionUserHome(user)
-    return user
+    return createUser(p.username, p.password, p.role)
   })
   ipcMain.handle(IPC.userDelete, (_e, id: number) => {
     const target = getUserById(id)
@@ -269,7 +269,6 @@ function registerIpc(): void {
   ipcMain.handle(IPC.userApprove, async (_e, id: number) => {
     const user = approveUser(id)
     if (user) {
-      await provisionUserHome(user)
       bus.emit(EVENTS.registrationsChanged, { pending: false, username: user.username })
     }
     return user
@@ -284,6 +283,10 @@ function registerIpc(): void {
       setAcl(p.userId, p.drive, p.pathPrefix, p.permission)
   )
   ipcMain.handle(IPC.aclRemove, (_e, id: number) => removeAcl(id))
+
+  ipcMain.handle(IPC.accessReqList, () => listPendingAccessRequests())
+  ipcMain.handle(IPC.accessReqApprove, (_e, id: number) => approveAccessRequest(id))
+  ipcMain.handle(IPC.accessReqDeny, (_e, id: number) => denyAccessRequest(id))
 
   ipcMain.handle(IPC.dashboard, () => getDashboard(true))
   ipcMain.handle(IPC.connectInfo, async () => {
@@ -302,7 +305,8 @@ function registerIpc(): void {
       httpsEnabled: c.httpsEnabled,
       httpsPort: c.httpsPort,
       registrationEnabled: c.registrationEnabled,
-      autoApproveRegistrations: c.autoApproveRegistrations
+      autoApproveRegistrations: c.autoApproveRegistrations,
+      autoApproveAccessRequests: c.autoApproveAccessRequests
     }
   })
   ipcMain.handle(IPC.configSet, (_e, patch: Record<string, unknown>) => {
@@ -317,7 +321,8 @@ function registerIpc(): void {
       httpsEnabled: next.httpsEnabled,
       httpsPort: next.httpsPort,
       registrationEnabled: next.registrationEnabled,
-      autoApproveRegistrations: next.autoApproveRegistrations
+      autoApproveRegistrations: next.autoApproveRegistrations,
+      autoApproveAccessRequests: next.autoApproveAccessRequests
     }
   })
 
@@ -359,6 +364,18 @@ if (!singleLock) {
         notify('New account request', `${info.username} is waiting for your approval`)
       }
     })
+    bus.on(
+      EVENTS.accessRequestsChanged,
+      (info: { pending: boolean; username: string; drive?: string }) => {
+        mainWindow?.webContents.send(IPC.evtAccessRequestsChanged, info)
+        if (info?.pending) {
+          notify(
+            'New access request',
+            `${info.username} wants access to ${info.drive ?? 'a drive'}`
+          )
+        }
+      }
+    )
 
     // First-run admin credentials + optional auto-start. Guarded so a failure
     // here is recorded and surfaced rather than silently aborting startup.

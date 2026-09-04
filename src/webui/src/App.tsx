@@ -43,8 +43,14 @@ export function App() {
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [showConnect, setShowConnect] = useState(false)
   const [connectQr, setConnectQr] = useState<string | null>(null)
+  const [adminView, setAdminView] = useState<'admin' | 'user'>(() =>
+    document.cookie.split('; ').some((c) => c === 'ld_view=user') ? 'user' : 'admin'
+  )
 
   const currentDrive = drives.find((drive) => drive.uuid === currentDriveId) ?? null
+  const isAdmin = user?.role === 'admin'
+  const needsAccess = !!currentDrive && !isAdmin && currentDrive.access !== 'granted'
+  const hasDriveAccess = !currentDrive ? false : isAdmin || currentDrive.access === 'granted'
 
   const toast = useCallback((kind: Toast['kind'], message: string) => {
     const id = Date.now() + Math.random()
@@ -63,7 +69,7 @@ export function App() {
   }, [])
 
   const refreshList = useCallback(async () => {
-    if (!currentDriveId) {
+    if (!currentDriveId || !hasDriveAccess) {
       setEntries([])
       return
     }
@@ -80,7 +86,7 @@ export function App() {
     } finally {
       setLoading(false)
     }
-  }, [currentDriveId, currentPath, showHidden, toast])
+  }, [currentDriveId, currentPath, showHidden, hasDriveAccess, toast])
 
   const uppy = useMemo(() => {
     const instance = new Uppy({ autoProceed: false })
@@ -217,6 +223,29 @@ export function App() {
     }
   }
 
+  const requestCurrentAccess = async () => {
+    if (!currentDriveId) return
+    try {
+      const { access } = await api.requestAccess(currentDriveId)
+      toast(
+        access === 'granted' ? 'success' : 'info',
+        access === 'granted' ? 'Access granted' : 'Access requested — waiting for admin approval'
+      )
+      await refreshDrives()
+    } catch (error) {
+      toast('error', error instanceof Error ? error.message : 'Could not request access')
+    }
+  }
+
+  const toggleAdminView = async () => {
+    const next = adminView === 'admin' ? 'user' : 'admin'
+    document.cookie = `ld_view=${next}; path=/; max-age=31536000; samesite=lax`
+    setAdminView(next)
+    setCurrentPath('')
+    await refreshDrives()
+    await refreshList()
+  }
+
   const mutate = async (operation: () => Promise<unknown>, success: string) => {
     try {
       await operation()
@@ -342,7 +371,7 @@ export function App() {
           <span>LocalDrive</span>
         </button>
         <div className="topbar-center">
-          {(!confined || drives.length > 1) && (
+          {drives.length > 0 && (
             <select
               className="drive-select"
               value={currentDriveId}
@@ -355,13 +384,25 @@ export function App() {
               {drives.length === 0 && <option value="">No drives shared</option>}
               {drives.map((drive) => (
                 <option key={drive.uuid} value={drive.uuid}>
-                  {drive.label}{drive.online ? '' : ' (offline)'}
+                  {drive.label}
+                  {!isAdmin && drive.access !== 'granted' ? ' 🔒' : ''}
+                  {drive.online ? '' : ' (offline)'}
                 </option>
               ))}
             </select>
           )}
         </div>
         <div className="topbar-tools">
+          {isAdmin && (
+            <button
+              className="view-toggle hide-mobile"
+              onClick={toggleAdminView}
+              title="Switch between seeing every user's files and just your own space"
+              aria-label="Toggle admin view mode"
+            >
+              {adminView === 'admin' ? 'Admin view' : 'My space'}
+            </button>
+          )}
           <button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle color theme">
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
@@ -419,7 +460,7 @@ export function App() {
             <button
               className="icon-btn"
               onClick={makeFolder}
-              disabled={!currentDriveId || currentDrive?.online === false}
+              disabled={!currentDriveId || currentDrive?.online === false || needsAccess}
               aria-label="New folder"
               title="New folder"
               data-tip="New folder"
@@ -429,7 +470,7 @@ export function App() {
             <button
               className="icon-btn primary"
               onClick={() => setShowUploader(true)}
-              disabled={!currentDriveId || currentDrive?.online === false}
+              disabled={!currentDriveId || currentDrive?.online === false || needsAccess}
               aria-label="Upload"
               title="Upload"
               data-tip="Upload"
@@ -473,8 +514,30 @@ export function App() {
           </section>
         )}
 
-        <DropZone uppy={uppy} disabled={!currentDriveId || currentDrive?.online === false} onOpen={() => setShowUploader(true)}>
+        <DropZone uppy={uppy} disabled={!currentDriveId || currentDrive?.online === false || needsAccess} onOpen={() => setShowUploader(true)}>
           <section className="browser panel">
+            {needsAccess ? (
+              <div className="state onboarding">
+                <h3>{currentDrive!.label}</h3>
+                {currentDrive!.access === 'pending' ? (
+                  <>
+                    <p>Your access request is waiting for an administrator to approve it. You’ll get in as soon as they do.</p>
+                    <button className="primary" onClick={refreshDrives}>Check again</button>
+                  </>
+                ) : currentDrive!.access === 'denied' ? (
+                  <>
+                    <p>An administrator declined your access to this drive. You can ask again if you think this was a mistake.</p>
+                    <button className="primary" onClick={requestCurrentAccess}>Request again</button>
+                  </>
+                ) : (
+                  <>
+                    <p>You don’t have access to this drive yet. Request access and an administrator will review it. If you’ve used this drive before, your existing folder reconnects automatically.</p>
+                    <button className="primary" onClick={requestCurrentAccess}>Request access</button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <>
             {currentDrive?.online === false && (
               <div className="state">
                 <h3>{confined ? 'Your files are offline right now' : `“${currentDrive.label}” is offline`}</h3>
@@ -538,6 +601,8 @@ export function App() {
                   onCopy={(entry) => moveOrCopy('copy', [entry.path])}
                 />
               )
+            )}
+              </>
             )}
           </section>
         </DropZone>

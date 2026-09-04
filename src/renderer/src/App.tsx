@@ -18,6 +18,7 @@ export default function App(): JSX.Element {
   const [drives, setDrives] = useState<DriveInfo[]>([])
   const [busy, setBusy] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
+  const [accessCount, setAccessCount] = useState(0)
   const [bootstrap, setBootstrap] = useState<{ username: string; password: string } | null>(null)
 
   const refreshDrives = useCallback(async () => {
@@ -29,20 +30,27 @@ export default function App(): JSX.Element {
     setPendingCount(us.filter((u) => u.status === 'pending').length)
   }, [])
 
+  const refreshAccess = useCallback(async () => {
+    setAccessCount((await window.ld.access.list()).length)
+  }, [])
+
   useEffect(() => {
     window.ld.server.status().then(setStatus)
     refreshDrives()
     refreshPending()
+    refreshAccess()
     window.ld.server.bootstrap().then((b) => b && setBootstrap(b))
     const offStatus = window.ld.server.onStatus(setStatus)
     const offDrives = window.ld.drives.onChange(refreshDrives)
     const offReg = window.ld.users.onRegistrationsChanged(refreshPending)
+    const offAccess = window.ld.access.onChange(refreshAccess)
     return () => {
       offStatus()
       offDrives()
       offReg()
+      offAccess()
     }
-  }, [refreshDrives, refreshPending])
+  }, [refreshDrives, refreshPending, refreshAccess])
 
   const control = async (fn: () => Promise<ServerStatus>): Promise<void> => {
     setBusy(true)
@@ -109,7 +117,9 @@ export default function App(): JSX.Element {
             onClick={() => setTab(t.id)}
           >
             {t.label}
-            {t.id === 'users' && pendingCount > 0 && <span className="badge">{pendingCount}</span>}
+            {t.id === 'users' && pendingCount + accessCount > 0 && (
+              <span className="badge">{pendingCount + accessCount}</span>
+            )}
           </button>
         ))}
       </nav>

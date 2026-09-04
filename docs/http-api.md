@@ -9,7 +9,9 @@ Common concepts:
 - **`drive`** = a registered drive `uuid`.
 - **`path`** = **home‑relative** POSIX path (what the client sees; `''`/`/` = the caller's
   root). The server maps it to a full drive path via `driveScope` and strips it back on
-  the way out. See [security-rbac.md](security-rbac.md).
+  the way out. For admins in the web UI, the `ld_view` cookie can restrict scope from
+  whole‑share (`admin`, default/absent) to their own userspace (`user`); it never widens
+  non‑admin access. See [security-rbac.md](security-rbac.md).
 - **Hidden files**: dotfiles / macOS `._` sidecars are excluded unless `hidden=1`;
   `.localdrive` is *always* excluded.
 
@@ -28,9 +30,10 @@ Validation on register: username ≥ 3 chars and sanitizes to a non‑empty home
 ## Drives — `/api/drives` (`routes/drives.ts`)
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| GET | `/` | auth | Drives visible to the caller: `registered && getUserHome(user,uuid) != null`. Returns `{ drives: DriveInfo[] }` (includes `totalBytes`/`freeBytes`). **Self-heals first:** calls `ensureUserProvisioned(user)` so any missing per-drive home/ACL for the caller is created before listing — a user always sees **every** registered drive (idempotent; writes only when a gap exists). |
+| GET | `/` | auth | Returns **all registered drives** as `{ drives: DriveInfo[] }` (includes `totalBytes`/`freeBytes` and `access: 'granted' | 'pending' | 'denied' | 'none'`). Admins are all `granted`; non‑admins are `granted` only if `getUserHome(user,uuid) != null`, otherwise the state comes from `getAccessMap` or `none`. No self‑provisioning. |
 | GET | `/all` | **admin** | Every detected drive (registered or not) for management. |
-| POST | `/register` | **admin** | `{ uuid }` → registers + `provisionDriveForAllUsers`. `400` if not found / unshareable. |
+| POST | `/register` | **admin** | `{ uuid }` → registers the drive and emits drive changes; it does not grant user access. `400` if not found / unshareable. |
+| POST | `/request-access` | auth | `{ uuid }` → non‑admins request that registered drive; returns `{ access: 'pending' }` or `{ access: 'granted' }` if auto‑approved. Admins return `{ access:'granted' }`. `400` on missing/invalid uuid. |
 | POST | `/unregister` | **admin** | `{ uuid }` → unshare (custom folders are removed entirely). |
 
 Adding a **custom folder** and revealing a drive are desktop‑only (IPC), not HTTP — see
@@ -89,9 +92,9 @@ Returns `{ query, hits: {drive,name,path,isDir}[] }`.
 | Method | Path | Body | Notes |
 | --- | --- | --- | --- |
 | GET | `/` | — | `{ users: (User & {acls})[] }` |
-| POST | `/` | `{ username, password, role? }` | Create + `provisionUserHome`. |
+| POST | `/` | `{ username, password, role? }` | Create a user with deterministic home; no drive ACLs are granted. `409` on username or sanitized home collision. |
 | DELETE | `/:id` | — | Delete (can't delete yourself; rejecting a pending user emits an event). |
-| POST | `/:id/approve` | — | Activate a pending user + provision. |
+| POST | `/:id/approve` | — | Activate a pending user; drive access remains opt‑in/requested separately. |
 | POST | `/:id/password` | `{ password }` | Reset password. |
 | POST | `/:id/role` | `{ role }` | `admin` \| `user`. |
 | GET | `/acls` | — | List all ACLs. |

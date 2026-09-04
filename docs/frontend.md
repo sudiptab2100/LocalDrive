@@ -19,7 +19,8 @@ A single‑file file browser (~1.3k lines) plus small components. It's an instal
 ### Top-level state (all in `App`)
 `theme` · `user` / `authChecked` · `drives` / `currentDriveId` / `currentPath` /
 `entries` / `loading` · `selected` (a `Set` of names) · `viewMode` (`grid`|`list`) ·
-`showHidden` · `preview` · `toasts` · `searchQuery` / `searchHits` / `searching` /
+`adminViewMode` (`admin`|`user`) · `showHidden` · `preview` · `toasts` · `searchQuery` /
+`searchHits` / `searching` /
 `showSearch` · `showUploader` · `dialog` (mkdir/rename/confirm) · `showConnect` /
 `connectQr`.
 
@@ -35,8 +36,11 @@ A single‑file file browser (~1.3k lines) plus small components. It's an instal
   window `focus` and `visibilitychange` (when visible) plus a ~20s interval while visible,
   so newly shared drives appear without a manual reload. `refreshDrives()` preserves the
   current selection.
-- Navigation sets `currentDriveId`/`currentPath` and re‑calls `api.list`. Breadcrumbs are
-  derived from `currentPath`.
+- Navigation sets `currentDriveId`/`currentPath`. Selecting a non‑granted drive shows the
+  request‑access panel (`none` → request button, `pending` → waiting/check again,
+  `denied` → declined/request again) instead of calling `api.list`. Granted drives list
+  files normally. Admins can switch **Admin view** ↔ **My space**, which writes the
+  restrict‑only `ld_view` cookie and refetches. Breadcrumbs are derived from `currentPath`.
 - All server calls go through the typed **`api`** object in `src/webui/src/api.ts`
   (`credentials: 'include'`), which throws `ApiRequestError(status)` on non‑2xx.
 
@@ -63,6 +67,8 @@ Selection reveals a **bulk action bar** (download‑zip / move / copy / delete).
 - **Preview** modal: inline images via `/api/files/raw`, text via a fetch; other types
   offer download.
 - **Connect** modal: shows the QR code / URLs from `api.connect()`.
+- **Drive access**: non‑admins see all registered drives but locked ones are marked with
+  🔒 and use `api.requestAccess(uuid)` (`POST /api/drives/request-access`).
 - **Theming**: `data-theme` on `<html>`; dark/light toggle. CSS lives in
   `src/webui/src/styles.css` with mobile breakpoints (the UI was explicitly reworked to be
   mobile‑friendly, including the modals).
@@ -78,13 +84,14 @@ first‑run **bootstrap** banner showing the one‑time admin credentials, and f
 | --- | --- | --- |
 | Dashboard | `DashboardPanel` | Transfer totals, drive capacity, recent activity (`ld.dashboard()`) |
 | Drives | `DrivesPanel` | Register/unregister detected drives, add a custom folder, reveal in Finder |
-| Users | `UsersPanel` | Create/approve/delete users, reset password, change role; **pending‑approval** queue |
+| Users | `UsersPanel` | Create/approve/delete users, reset password, change role; pending account and drive access request queues; auto‑approve drive access switch |
 | Connect | `ConnectPanel` | URLs + QR for onboarding clients; reveal CA cert |
-| Settings | `SettingsPanel` | Edit `AppConfigView` (port, host, autostart, HTTPS, registration/auto‑approve) |
+| Settings | `SettingsPanel` | Edit `AppConfigView` (port, host, autostart, HTTPS, registration settings) |
 
 - State comes entirely from **`window.ld`** (no HTTP). Live updates via the push
-  subscriptions `onStatus`, `drives.onChange`, and `users.onRegistrationsChanged` — the
-  latter drives the **pending badge** on the Users tab.
+  subscriptions `onStatus`, `drives.onChange`, `users.onRegistrationsChanged`, and
+  `access.onChange` — account and drive access events drive the **pending badge** on the
+  Users tab.
 - UI primitives (buttons, modals, fields, confirm dialogs) live in
   `src/renderer/src/ui.tsx`; panel styles in `src/renderer/src/styles.css`.
 

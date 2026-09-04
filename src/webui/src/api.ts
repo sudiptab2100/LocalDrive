@@ -92,6 +92,12 @@ export const api = {
   drives() {
     return request<{ drives: DriveInfo[] }>('/api/drives')
   },
+  requestAccess(uuid: string) {
+    return request<{ access: DriveInfo['access'] }>('/api/drives/request-access', {
+      method: 'POST',
+      body: JSON.stringify({ uuid })
+    })
+  },
   list(drive: string, path: string, hidden?: boolean) {
     return request<ListResponse>(`/api/files/list?${params({ drive, path, hidden: hidden ? '1' : undefined })}`)
   },

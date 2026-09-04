@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { DriveInfo, Role } from '@shared/types'
+import type { DriveInfo, Role, AccessRequest } from '@shared/types'
 import type { DashboardData, ConnectInfo, UserWithAcls, AppConfigView } from '@shared/ipc'
 import { formatBytes, formatDate, timeAgo, usagePct } from './util'
 import {
@@ -253,6 +253,7 @@ interface ConfirmState {
 
 export function UsersPanel(): JSX.Element {
   const [users, setUsers] = useState<UserWithAcls[]>([])
+  const [accessReqs, setAccessReqs] = useState<AccessRequest[]>([])
   const [cfg, setCfg] = useState<AppConfigView | null>(null)
   const [query, setQuery] = useState('')
   const [showAdd, setShowAdd] = useState(false)
@@ -262,11 +263,17 @@ export function UsersPanel(): JSX.Element {
   const toast = useToast()
 
   const load = async (): Promise<void> => setUsers(await ld().users.list())
+  const loadAccess = async (): Promise<void> => setAccessReqs(await ld().access.list())
   useEffect(() => {
     load()
+    loadAccess()
     ld().config.get().then(setCfg)
     const off = ld().users.onRegistrationsChanged(() => load())
-    return off
+    const offAccess = ld().access.onChange(() => loadAccess())
+    return () => {
+      off()
+      offAccess()
+    }
   }, [])
 
   const pending = users.filter((u) => u.status === 'pending')
@@ -282,6 +289,17 @@ export function UsersPanel(): JSX.Element {
     try {
       await fn()
       toast('success', ok)
+      load()
+    } catch (e) {
+      toast('error', (e as Error).message || 'Something went wrong')
+    }
+  }
+
+  const actAccess = async (fn: () => Promise<unknown>, ok: string): Promise<void> => {
+    try {
+      await fn()
+      toast('success', ok)
+      loadAccess()
       load()
     } catch (e) {
       toast('error', (e as Error).message || 'Something went wrong')
@@ -364,10 +382,68 @@ export function UsersPanel(): JSX.Element {
           {pending.length > 0 && <span className="badge">{pending.length}</span>}
         </h2>
         <p className="muted">
-          Each user automatically gets a private folder named after them on every shared drive and
-          can only see inside their own folder. Admins can access everything.
+          Users see every shared drive but must request access to each one. When you approve a
+          request, they get a private folder named after them on that drive and can only see inside
+          their own folder. Admins can access everything.
         </p>
       </div>
+
+      {accessReqs.length > 0 && (
+        <div className="card accent-card">
+          <div className="card-head">
+            <h3>
+              Drive access requests <span className="badge">{accessReqs.length}</span>
+            </h3>
+            <p className="small muted">
+              These users asked for access to a drive. Approving creates (or reuses) their private
+              folder on that drive.
+            </p>
+          </div>
+          <div className="user-list">
+            {accessReqs.map((r) => (
+              <div className="user-row" key={r.id}>
+                <Avatar name={r.username} />
+                <div className="user-row-main">
+                  <div className="user-row-top">
+                    <span className="user-name">{r.username}</span>
+                    <span className="role-badge">{r.driveLabel}</span>
+                    {r.existingSpace && (
+                      <span className="role-badge ok" title="A folder for this user already exists on the drive">
+                        space exists
+                      </span>
+                    )}
+                  </div>
+                  <div className="user-sub muted">Requested {timeAgo(r.requestedAt)}</div>
+                </div>
+                <div className="row-gap">
+                  <button
+                    className="btn primary small"
+                    onClick={() =>
+                      actAccess(
+                        () => ld().access.approve(r.id),
+                        `Granted ${r.username} access to ${r.driveLabel}`
+                      )
+                    }
+                  >
+                    Approve
+                  </button>
+                  <button
+                    className="btn danger small"
+                    onClick={() =>
+                      actAccess(
+                        () => ld().access.deny(r.id),
+                        `Denied ${r.username} access to ${r.driveLabel}`
+                      )
+                    }
+                  >
+                    Deny
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {pending.length > 0 && (
         <div className="card accent-card">
@@ -443,6 +519,32 @@ export function UsersPanel(): JSX.Element {
               onChange={(v) =>
                 toggle(
                   { autoApproveRegistrations: v },
+                  v ? 'Auto-approval on' : 'Auto-approval off'
+                )
+              }
+            />
+          </div>
+        </div>
+      )}
+
+      {cfg && (
+        <div className="card">
+          <div className="card-head">
+            <h3>Drive access</h3>
+          </div>
+          <div className="switch-row">
+            <div className="switch-copy">
+              <div className="switch-title">Auto-approve drive access requests</div>
+              <div className="small muted">
+                Approve every drive access request automatically — users get their folder without
+                waiting.
+              </div>
+            </div>
+            <Switch
+              checked={cfg.autoApproveAccessRequests}
+              onChange={(v) =>
+                toggle(
+                  { autoApproveAccessRequests: v },
                   v ? 'Auto-approval on' : 'Auto-approval off'
                 )
               }
