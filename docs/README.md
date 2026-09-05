@@ -44,7 +44,7 @@ stop/crash/restart with no data loss, and drives can be hot‑added.
 | Config + DB dir | `~/Library/Application Support/LocalDrive/` |
 | On‑drive share root | `<mount>/LocalDrive/` (per‑user: `LocalDrive/<home>/`) |
 | On‑drive app data | `<mount>/.localdrive/` (tmp, thumbs, trash, versions, users.json) |
-| Git branch / remote | `main` @ `github.com/sudiptab2100/LocalDrive` |
+| Git branch / remote | `main` @ `github.com/sudiptab2100/LocalDrive-Master` |
 
 ## Keeping this KB accurate
 When you change behavior, update the affected page(s). The highest‑value pages to keep

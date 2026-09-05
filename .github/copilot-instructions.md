@@ -99,7 +99,7 @@ Docs-only changes need none of this. For shipping app changes:
 6. Confirm the served bundle matches the build: compare `curl -s http://127.0.0.1:4820/ | grep -o 'assets/index-[A-Za-z0-9_]*\.js'` with `ls out/webui/assets/index-*.js`.
 
 ## Git
-- Remote `github.com/sudiptab2100/LocalDrive`, branch **`main`**. Rebase before push
+- Remote `github.com/sudiptab2100/LocalDrive-Master`, branch **`main`**. Rebase before push
   (`git fetch -q origin && git rebase origin/main && git push origin main`).
 - Commit trailer (unless told otherwise):
   `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`

@@ -63,7 +63,7 @@ skip all of this** — just commit & push.
 7. **Push:** `git fetch && git rebase origin/main && git push origin main`.
 
 ## Repo / CI facts
-- Git repo: `github.com/sudiptab2100/LocalDrive`, default branch **`main`**.
+- Git repo: `github.com/sudiptab2100/LocalDrive-Master`, default branch **`main`**.
 - No CI workflows configured; typecheck + the deploy verification above are the gates.
 
 ## Related
