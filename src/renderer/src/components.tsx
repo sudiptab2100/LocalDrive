@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { DriveInfo, Role, AccessRequest } from '@shared/types'
 import type { DashboardData, ConnectInfo, UserWithAcls, AppConfigView } from '@shared/ipc'
 import { formatBytes, formatDate, timeAgo, usagePct } from './util'
+import QRCode from 'qrcode'
 import {
   Avatar,
   ConfirmDialog,
@@ -915,54 +916,188 @@ function ResetPasswordModal({
 }
 
 // ---------------------------------------------------------------- Connect ---
+type ConnScheme = 'http' | 'https'
+type ConnService = 'user' | 'webdav' | 'admin'
+
+const CONN_SERVICE_PATH: Record<ConnService, string> = { user: '', webdav: '/dav', admin: '/admin' }
+
+function isPrivateLanIp(ip: string): boolean {
+  return /^192\.168\./.test(ip) || /^10\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip)
+}
+
 export function ConnectPanel(): JSX.Element {
   const [info, setInfo] = useState<ConnectInfo | null>(null)
-  const [copied, setCopied] = useState('')
+  const [scheme, setScheme] = useState<ConnScheme>('http')
+  const [host, setHost] = useState('')
+  const [service, setService] = useState<ConnService>('user')
+  const [qr, setQr] = useState('')
+  const [copied, setCopied] = useState(false)
 
+  // Load the connection info and refresh whenever the server status changes
+  // (port, HTTPS or LAN addresses may have changed).
   useEffect(() => {
-    ld().connect().then(setInfo)
+    let alive = true
+    const load = (): void => {
+      ld().connect().then((i) => {
+        if (alive) setInfo(i)
+      })
+    }
+    load()
+    const off = ld().server.onStatus(() => load())
+    return () => {
+      alive = false
+      off()
+    }
   }, [])
 
-  if (!info) return <div className="panel"><div className="empty">Start the server to get a connection link.</div></div>
+  // Host options: every LAN IP (private-LAN first), then the ".local" name.
+  const hosts = useMemo<{ value: string; label: string }[]>(() => {
+    if (!info) return []
+    const ips = [...info.addresses].sort((a, b) => Number(isPrivateLanIp(b)) - Number(isPrivateLanIp(a)))
+    const opts = ips.map((ip) => ({ value: ip, label: ip }))
+    if (info.hostname) opts.push({ value: info.hostname, label: `${info.hostname} (Bonjour)` })
+    if (opts.length === 0) opts.push({ value: 'localhost', label: 'localhost' })
+    return opts
+  }, [info])
 
-  const copy = (url: string): void => {
-    navigator.clipboard.writeText(url)
-    setCopied(url)
-    setTimeout(() => setCopied(''), 1500)
+  // Keep the selected host valid as options change.
+  useEffect(() => {
+    if (hosts.length && !hosts.some((h) => h.value === host)) setHost(hosts[0].value)
+  }, [hosts, host])
+
+  // Fall back to HTTP if HTTPS is not being served.
+  useEffect(() => {
+    if (info && !info.httpsEnabled && scheme === 'https') setScheme('http')
+  }, [info, scheme])
+
+  const port = info ? (scheme === 'https' ? info.httpsPort : info.port) : 0
+  const url = info && host ? `${scheme}://${host}:${port}${CONN_SERVICE_PATH[service]}` : ''
+
+  // Generate the QR in the browser so it updates instantly on any change.
+  useEffect(() => {
+    let alive = true
+    if (!url) {
+      setQr('')
+      return
+    }
+    QRCode.toDataURL(url, { margin: 1, width: 240 })
+      .then((d) => {
+        if (alive) setQr(d)
+      })
+      .catch(() => {
+        if (alive) setQr('')
+      })
+    return () => {
+      alive = false
+    }
+  }, [url])
+
+  if (!info) {
+    return (
+      <div className="panel">
+        <div className="empty">Start the server to get a connection link.</div>
+      </div>
+    )
   }
+
+  if (info.urls.length === 0) {
+    return (
+      <div className="panel">
+        <div className="panel-head">
+          <h2>Connect a device</h2>
+        </div>
+        <div className="empty">Server is not running. Start it to get a connection link.</div>
+      </div>
+    )
+  }
+
+  const copy = (): void => {
+    navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  const isLocalName = host.endsWith('.local')
 
   return (
     <div className="panel">
       <div className="panel-head">
         <h2>Connect a device</h2>
-        <p className="muted">Scan the QR code on your phone, or open a link in any browser on the same WiFi.</p>
+        <p className="muted">
+          Choose how to connect, then scan the QR code or open the link on any device on the same
+          WiFi.
+        </p>
       </div>
+
+      <div className="connect-controls">
+        <label className="fld">
+          <span className="fld-label">Protocol</span>
+          <select
+            className="select"
+            value={scheme}
+            onChange={(e) => setScheme(e.target.value as ConnScheme)}
+          >
+            <option value="http">HTTP</option>
+            <option value="https" disabled={!info.httpsEnabled}>
+              {info.httpsEnabled ? 'HTTPS' : 'HTTPS — enable in Settings'}
+            </option>
+          </select>
+        </label>
+        <label className="fld">
+          <span className="fld-label">Address</span>
+          <select className="select" value={host} onChange={(e) => setHost(e.target.value)}>
+            {hosts.map((h) => (
+              <option key={h.value} value={h.value}>
+                {h.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="fld">
+          <span className="fld-label">Service</span>
+          <select
+            className="select"
+            value={service}
+            onChange={(e) => setService(e.target.value as ConnService)}
+          >
+            <option value="user">User (web UI)</option>
+            <option value="webdav">WebDAV</option>
+            <option value="admin">Admin Console</option>
+          </select>
+        </label>
+      </div>
+
       <div className="connect">
-        {info.qr && <img className="qr" src={info.qr} alt="Connect QR" />}
+        {qr && <img className="qr" src={qr} alt="Connect QR" />}
         <div className="urls">
-          {info.urls.length === 0 && <div className="empty">Server is not running.</div>}
-          {info.urls.map((u) => (
-            <div className="url-row" key={u}>
-              <code className="grow">{u}</code>
-              <button className="btn small" onClick={() => copy(u)}>
-                {copied === u ? 'Copied!' : 'Copy'}
-              </button>
-              <button className="btn small" onClick={() => ld().openExternal(u)}>
-                Open
-              </button>
+          <div className="url-row">
+            <code className="grow">{url}</code>
+            <button className="btn small" onClick={copy}>
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+            <button className="btn small" onClick={() => ld().openExternal(url)}>
+              Open
+            </button>
+          </div>
+          {service === 'webdav' && (
+            <div className="small muted">
+              To mount as a network drive, use a WebDAV client (macOS Finder ▸ ⌘K, Windows ▸ “Map
+              network drive”, or a mobile WebDAV app) — <strong>not a browser</strong> — then sign
+              in with your LocalDrive username &amp; password. Scanning this QR opens a browser
+              instead, so prefer copying the link into your WebDAV client.
             </div>
-          ))}
-          <div className="small muted">
-            The IP link works on any device on this WiFi. The <code>.local</code> name needs
-            Bonjour/mDNS — fine on Apple devices and most modern OSes, but on Android or older
-            Windows use the IP link.
-          </div>
-          <div className="small muted">
-            To mount as a network drive, use a WebDAV client (macOS Finder ▸ ⌘K, Windows ▸ “Map
-            network drive”, or a mobile WebDAV app) — <strong>not a browser</strong> — at{' '}
-            <code>{(info.urls[0] || '') + '/dav'}</code>, then sign in with your LocalDrive
-            username &amp; password.
-          </div>
+          )}
+          {service === 'admin' && (
+            <div className="small muted">
+              The Admin Console can only be used by administrator accounts.
+            </div>
+          )}
+          {isLocalName && (
+            <div className="small muted">
+              The <code>.local</code> name needs Bonjour/mDNS — fine on Apple devices and most
+              modern OSes, but on Android or older Windows pick an IP address instead.
+            </div>
+          )}
         </div>
       </div>
     </div>

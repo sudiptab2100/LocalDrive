@@ -146,7 +146,7 @@ about every 25 seconds.
 | --- | --- | --- | --- |
 | GET | `/api/health` | public | `{ ok:true, status: ServerStatus }` — used by the deploy health poll. |
 | GET | `/api/cert` | public | Root CA cert (`application/x-x509-ca-cert`) for client trust install; `404` if HTTPS never enabled. |
-| GET | `/api/connect` | auth | `{ urls, hostname, qr }` (QR data URL for onboarding). |
+| GET | `/api/connect` | auth | `{ urls, hostname, qr, addresses, httpsEnabled, port, httpsPort }` — structured pieces so the client composes a URL (protocol · host · service) and renders the QR locally; `urls`/`qr` kept as fallback. |
 
 ## WebDAV — `/dav` (`src/server/webdav.ts`)
 - Mount a drive at `http://<host>:4820/dav/<DriveName>/` with a WebDAV client, signing in

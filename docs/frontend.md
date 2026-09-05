@@ -103,7 +103,7 @@ first‑run **bootstrap** banner showing the one‑time admin credentials, and f
 | Dashboard | `DashboardPanel` | Transfer totals, drive capacity, recent activity (`ld.dashboard()`) |
 | Drives | `DrivesPanel` | Register/unregister detected drives, add a custom folder, reveal in Finder |
 | Users | `UsersPanel` | Create/approve/delete users, reset password, change role; pending account and drive access request queues; auto‑approve drive access switch |
-| Connect | `ConnectPanel` | URLs + QR for onboarding clients; reveal CA cert |
+| Connect | `ConnectPanel` | Three dropdowns — protocol (HTTP/HTTPS), host (each LAN IP + `.local`), service (User/WebDAV/Admin Console) — compose one URL + a client-side QR (via `qrcode`); HTTPS is disabled until enabled in Settings; refreshes on server status change |
 | Settings | `SettingsPanel` | Edit `AppConfigView` (port, host, autostart, HTTPS, registration settings) |
 
 - State comes entirely from **`window.ld`**: IPC on desktop, HTTP/SSE in `/admin`. Live updates via the push

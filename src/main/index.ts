@@ -27,7 +27,7 @@ import {
   denyAccessRequest
 } from '../server/access.js'
 import { qrDataUrl } from '../server/discovery.js'
-import { pickQrUrl } from '../server/util/net.js'
+import { pickQrUrl, lanAddresses } from '../server/util/net.js'
 import { getStatus } from '../server/status.js'
 import { getCaCertPath } from '../server/tls.js'
 import { formatConnectionBanner } from '../server/util/report.js'
@@ -305,7 +305,15 @@ function registerIpc(): void {
   ipcMain.handle(IPC.connectInfo, async () => {
     const status = getStatus()
     const primary = pickQrUrl(status.urls, status.port)
-    return { urls: status.urls, hostname: status.hostname, qr: await qrDataUrl(primary) }
+    return {
+      urls: status.urls,
+      hostname: status.hostname,
+      qr: await qrDataUrl(primary),
+      addresses: lanAddresses(),
+      httpsEnabled: status.https,
+      port: status.port,
+      httpsPort: status.httpsPort
+    }
   })
 
   ipcMain.handle(IPC.configGet, () => {

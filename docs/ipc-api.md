@@ -84,7 +84,10 @@ subscriptions above (each returns an unsubscribe function):
 ## IPC view types (`src/shared/ipc.ts`)
 - **`UserWithAcls`** = `User & { acls: Acl[] }`.
 - **`DashboardData`** = `{ transfers, drives[], server, activity[], usersCount }`.
-- **`ConnectInfo`** = `{ urls, hostname, qr }`.
+- **`ConnectInfo`** = `{ urls, hostname, qr, addresses, httpsEnabled, port, httpsPort }`.
+  The `addresses`/`httpsEnabled`/`port`/`httpsPort` fields let the Connect panel compose a
+  URL client-side from three dropdowns (protocol · host · service) and render the QR in the
+  browser; `urls`/`qr` remain for back-compat/fallback.
 - **`AppConfigView`** = the settings subset of `AppConfig` (no `jwtSecret`, no
   `registeredDriveUuids`), including `autoApproveAccessRequests`.
 - **`AccessRequest`** = pending drive request item shown in the desktop Users tab.

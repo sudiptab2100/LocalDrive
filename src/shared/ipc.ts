@@ -61,6 +61,14 @@ export interface ConnectInfo {
   urls: string[]
   hostname: string
   qr: string
+  /** LAN IPv4 addresses the server is reachable on (each is a Host option). */
+  addresses: string[]
+  /** Whether the HTTPS listener is actually active (drives the HTTPS option). */
+  httpsEnabled: boolean
+  /** HTTP port. */
+  port: number
+  /** HTTPS port (when `httpsEnabled`). */
+  httpsPort: number
 }
 
 export interface AppConfigView {

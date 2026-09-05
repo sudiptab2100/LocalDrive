@@ -16,7 +16,7 @@ import { eventsRouter } from './routes/events.js'
 import { getStatus } from '../status.js'
 import { getCaCertPem } from '../tls.js'
 import { qrDataUrl } from '../discovery.js'
-import { pickQrUrl } from '../util/net.js'
+import { pickQrUrl, lanAddresses } from '../util/net.js'
 
 /** Holder allowing the WebDAV handler to be swapped when drives change. */
 let webdavHandler: RequestHandler | null = null
@@ -83,7 +83,15 @@ export function createApp(opts: AppOptions = {}): Express {
   app.get('/api/connect', requireAuth, async (_req, res) => {
     const status = getStatus()
     const primary = pickQrUrl(status.urls, status.port)
-    res.json({ urls: status.urls, hostname: status.hostname, qr: await qrDataUrl(primary) })
+    res.json({
+      urls: status.urls,
+      hostname: status.hostname,
+      qr: await qrDataUrl(primary),
+      addresses: lanAddresses(),
+      httpsEnabled: status.https,
+      port: status.port,
+      httpsPort: status.httpsPort
+    })
   })
 
   // Serve the admin control panel (mounted before the webui catch-all so its
